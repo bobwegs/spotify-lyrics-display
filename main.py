@@ -349,18 +349,40 @@ def now_playing():
     track_id = player['item']['id']
     track_name = player['item']['name']
     artist_name = player['item']['artists'][0]['name']
+    album_name = player['item'].get('album', {}).get('name', '')
+    duration_secs = player['item'].get('duration_ms', 0) // 1000
     
     album_art = ""
     if player['item'].get('album') and player['item']['album'].get('images'):
         album_art = player['item']['album']['images'][0]['url']
     
     lines = []
-    lrc_res = requests.get("https://lrclib.net/api/get", params={"track_name": track_name, "artist_name": artist_name})
+    
+    # 1. Try exact match on LRCLIB via /api/get
+    lrc_res = requests.get("https://lrclib.net/api/get", params={
+        "track_name": track_name, 
+        "artist_name": artist_name,
+        "album_name": album_name,
+        "duration": duration_secs
+    }, headers={"User-Agent": "InCarLyricsApp/1.0"})
     
     if lrc_res.ok:
         lrc_data = lrc_res.json()
         if lrc_data.get('syncedLyrics'):
             lines = parse_lrc(lrc_data['syncedLyrics'])
+            
+    # 2. Fallback to LRCLIB search if exact get fails or has no synced lyrics
+    if not lines:
+        search_res = requests.get("https://lrclib.net/api/search", params={
+            "q": f"{track_name} {artist_name}"
+        }, headers={"User-Agent": "InCarLyricsApp/1.0"})
+        
+        if search_res.ok:
+            search_data = search_res.json()
+            for track in search_data:
+                if track.get('syncedLyrics'):
+                    lines = parse_lrc(track['syncedLyrics'])
+                    break
 
     return jsonify({
         "isPlaying": player.get('is_playing', False),
