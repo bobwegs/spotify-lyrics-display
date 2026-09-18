@@ -2,4 +2,4 @@ flask
 requests
 playwright==1.63.0
 playwright-stealth==1.0.6
-setuptools" " 
+setuptools
