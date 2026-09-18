@@ -2,8 +2,6 @@ import os
 import time
 import requests
 from flask import Flask, request, jsonify, render_template_string
-from playwright.sync_api import sync_playwright
-from playwright_stealth import stealth_sync
 
 app = Flask(__name__)
 
@@ -36,10 +34,10 @@ HTML_TEMPLATE = """
 <body>
 
     <div id="login-ui" class="login-box">
-        <h2 style="color: #1DB954;">Headless Auth</h2>
-        <input type="text" id="user" placeholder="Spotify Email or Username" />
-        <input type="password" id="pass" placeholder="Password" />
-        <button onclick="doLogin()">Start Engine</button>
+        <h2 style="color: #1DB954;">Connect Spotify</h2>
+        <p style="color: #b3b3b3; font-size: 14px; margin-bottom: 20px;">Paste your sp_dc cookie below to authenticate.</p>
+        <input type="text" id="sp_dc_input" placeholder="sp_dc cookie value" />
+        <button onclick="doLogin()">Connect Engine</button>
         <p id="status" style="color: #b3b3b3; font-size: 14px; margin-top: 15px;"></p>
     </div>
 
@@ -53,14 +51,17 @@ HTML_TEMPLATE = """
 
     <script>
         async function doLogin() {
-            document.getElementById('status').innerText = 'Booting headless browser... (Takes ~10-15s)';
+            const spDcValue = document.getElementById('sp_dc_input').value.trim();
+            if (!spDcValue) {
+                document.getElementById('status').innerText = 'Please enter a cookie.';
+                return;
+            }
+            
+            document.getElementById('status').innerText = 'Verifying cookie...';
             const res = await fetch('/api/login', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    u: document.getElementById('user').value,
-                    p: document.getElementById('pass').value
-                })
+                body: JSON.stringify({ sp_dc: spDcValue })
             });
             
             const data = await res.json();
@@ -132,35 +133,21 @@ def index():
 
 @app.route('/api/login', methods=['POST'])
 def login():
-    creds = request.json
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
-            page = context.new_page()
+    data = request.json
+    sp_dc = data.get('sp_dc')
+    
+    if sp_dc:
+        SESSION['sp_dc'] = sp_dc
+        SESSION['expires_at'] = 0 
+        
+        # Test the cookie immediately by attempting to grab a token
+        try:
+            get_access_token()
+            return jsonify({"success": True})
+        except Exception as e:
+            return jsonify({"success": False, "error": "Invalid cookie or could not fetch token."})
             
-            # Apply stealth masks before navigating
-            stealth_sync(page)
-            
-            page.goto("https://accounts.spotify.com/en/login", wait_until="networkidle")
-            page.fill("#login-username", creds.get('u'))
-            page.fill("#login-password", creds.get('p'))
-            page.click("#login-button")
-            
-            page.wait_for_url("https://open.spotify.com/**", timeout=15000)
-            
-            cookies = context.cookies()
-            sp_dc = next((c['value'] for c in cookies if c['name'] == 'sp_dc'), None)
-            browser.close()
-            
-            if sp_dc:
-                SESSION['sp_dc'] = sp_dc
-                SESSION['expires_at'] = 0 
-                return jsonify({"success": True})
-            return jsonify({"success": False, "error": "Login blocked or wrong password."})
-                
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
+    return jsonify({"success": False, "error": "Cookie missing."})
 
 def get_access_token():
     if time.time() < SESSION['expires_at']:
@@ -169,15 +156,19 @@ def get_access_token():
     res = requests.get(
         "https://open.spotify.com/get_access_token?reason=transport&productType=web_player",
         headers={"Cookie": f"sp_dc={SESSION['sp_dc']}", "User-Agent": "Mozilla/5.0"}
-    ).json()
+    )
     
-    SESSION['access_token'] = res.get('accessToken')
-    SESSION['expires_at'] = time.time() + (res.get('accessTokenExpirationTimestampMs', 300000) / 1000) - 60
+    if not res.ok:
+        raise Exception("Failed to fetch token. Is the sp_dc correct?")
+        
+    data = res.json()
+    SESSION['access_token'] = data.get('accessToken')
+    SESSION['expires_at'] = time.time() + (data.get('accessTokenExpirationTimestampMs', 300000) / 1000) - 60
     return SESSION['access_token']
 
 @app.route('/api/now-playing')
 def now_playing():
-    if not SESSION['sp_dc']:
+    if not SESSION.get('sp_dc'):
         return jsonify({"isPlaying": False, "error": "No session active."})
         
     try:
