@@ -13,7 +13,7 @@ HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>In-Car Lyrics</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/color-thief/2.3.0/color-thief.umd.js"></script>
     <style>
@@ -26,56 +26,60 @@ HTML_TEMPLATE = """
             align-items: center; 
             justify-content: center; 
             height: 100vh; 
+            width: 100vw;
             margin: 0; 
-            transition: background 1.5s ease; /* Smooth transition for solid colors */
+            overflow: hidden;
+            transition: background 1.5s ease; 
         }
-        .login-box { background: rgba(40, 40, 40, 0.9); padding: 2rem; border-radius: 12px; text-align: center; width: 85%; max-width: 400px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+        .login-box { 
+            background: rgba(40, 40, 40, 0.9); 
+            padding: 2rem; 
+            border-radius: 12px; 
+            text-align: center; 
+            width: 85%; 
+            max-width: 400px; 
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5); 
+        }
         input { display: block; margin: 15px auto; padding: 12px; width: 85%; border-radius: 6px; border: none; font-size: 16px; background: #333; color: white;}
         button { background: #1DB954; color: white; border: none; padding: 14px 20px; border-radius: 30px; font-weight: bold; cursor: pointer; width: 93%; font-size: 16px; transition: transform 0.2s;}
         button:hover { transform: scale(1.04); }
         
-        #lyrics-container { display: flex; width: 100%; height: 100vh; overflow: hidden; position: relative; flex-direction: column;}
-        
-        #track-header { 
-            padding: 30px 20px 10px 30px; 
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            z-index: 10;
+        /* True center-locked 3-line fixed layout */
+        #lyrics-container { 
+            display: flex; 
+            width: 90vw; 
+            height: 100vh; 
+            position: relative; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
+            text-align: center;
+            gap: 3vh;
         }
-        #album-cover-img { width: 64px; height: 64px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); display: none; }
-        .header-text { display: flex; flex-direction: column; }
-        #track-title { color: #fff; margin: 0; font-size: 22px; font-weight: bold; text-shadow: 0 2px 4px rgba(0,0,0,0.3); }
-        #track-artist { color: rgba(255,255,255,0.7); margin: 4px 0 0 0; font-size: 16px; font-weight: 500;}
         
-        #lyrics-scroll { 
-            flex-grow: 1; 
-            overflow-y: auto; 
-            padding: 30px; 
-            padding-bottom: 60vh; 
-            text-align: left;
-            -ms-overflow-style: none;
-            scrollbar-width: none;
-        }
-        #lyrics-scroll::-webkit-scrollbar { display: none; }
-        
-        /* Spotify strict 3-line scrollable styling */
         .lyric-line { 
-            font-size: 24px; 
-            font-weight: 700; 
-            margin: 20px 0; 
+            width: 100%;
             transition: all 0.3s ease; 
-            opacity: 0; /* Hides lines outside the 3-line window while keeping scroll height */
-            color: #fff;
+            word-break: break-word;
+            padding: 0 20px;
         }
+        
+        /* Adjacent (Previous/Next) lines: dimmed and responsive */
         .adjacent-line { 
             opacity: 0.4; 
+            font-size: clamp(18px, 3.5vw, 30px);
+            font-weight: 600;
         }
+        
+        /* Active line: permanently dead-center, large and bright */
         .active-line { 
             opacity: 1; 
-            font-size: 38px; 
-            text-shadow: 0 2px 10px rgba(0,0,0,0.2); 
+            font-size: clamp(26px, 5.5vw, 52px); 
+            font-weight: 800;
+            text-shadow: 0 2px 20px rgba(0,0,0,0.4); 
         }
+        
+        #album-art-hidden { display: none; }
     </style>
 </head>
 <body>
@@ -92,19 +96,40 @@ HTML_TEMPLATE = """
         </form>
     </div>
     {% else %}
+    <img id="album-art-hidden" crossorigin="anonymous" />
+    
     <div id="lyrics-container">
-        <div id="track-header">
-            <img id="album-cover-img" crossorigin="anonymous" />
-            <div class="header-text">
-                <h3 id="track-title">Waiting for music...</h3>
-                <p id="track-artist"></p>
-            </div>
-        </div>
-        <div id="lyrics-scroll"></div>
+        <div id="prev-line" class="lyric-line adjacent-line"></div>
+        <div id="active-line" class="lyric-line active-line">Waiting for music...</div>
+        <div id="next-line" class="lyric-line adjacent-line"></div>
     </div>
 
     <script>
         const colorThief = new ColorThief();
+        let cachedTrackId = "";
+        let parsedLines = [];
+
+        // Auto Wake Lock to keep the screen active while driving
+        async function requestWakeLock() {
+            try {
+                if ('wakeLock' in navigator) {
+                    let wakeLock = await navigator.wakeLock.request('screen');
+                    document.addEventListener('visibilitychange', async () => {
+                        if (wakeLock !== null && document.visibilityState === 'visible') {
+                            wakeLock = await navigator.wakeLock.request('screen');
+                        }
+                    });
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        }
+        requestWakeLock();
+
+        // Auto-disconnect instantly when closing tab or refreshing
+        window.addEventListener('beforeunload', () => {
+            navigator.sendBeacon('/logout');
+        });
 
         async function pollLyrics() {
             try {
@@ -112,63 +137,46 @@ HTML_TEMPLATE = """
                 const data = await res.json();
                 
                 if(data.isPlaying) {
-                    document.getElementById('track-title').innerText = data.title;
-                    document.getElementById('track-artist').innerText = data.artist;
-                    
-                    const scrollBox = document.getElementById('lyrics-scroll');
-                    
-                    if (scrollBox.dataset.trackId !== data.trackId) {
-                        scrollBox.dataset.trackId = data.trackId;
-                        scrollBox.innerHTML = ''; 
+                    if (cachedTrackId !== data.trackId) {
+                        cachedTrackId = data.trackId;
+                        parsedLines = data.lines || [];
                         
                         if (data.albumArt) {
-                            const img = document.getElementById('album-cover-img');
-                            img.style.display = 'block';
+                            const img = document.getElementById('album-art-hidden');
                             img.onload = () => {
-                                const color = colorThief.getColor(img);
-                                // Sets a solid dominant color background
-                                document.body.style.background = `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
+                                try {
+                                    const color = colorThief.getColor(img);
+                                    document.body.style.background = `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
+                                } catch(e) {}
                             };
                             img.src = data.albumArt;
-                        }
-                        
-                        if (data.lines && data.lines.length > 0) {
-                            data.lines.forEach((line) => {
-                                const div = document.createElement('div');
-                                div.className = 'lyric-line';
-                                div.innerText = line.words;
-                                div.dataset.time = line.startTimeMs;
-                                scrollBox.appendChild(div);
-                            });
-                        } else {
-                            const div = document.createElement('div');
-                            div.className = 'lyric-line active-line';
-                            div.innerText = "♪";
-                            scrollBox.appendChild(div);
                         }
                     }
 
                     let activeIndex = -1;
-                    const lines = document.getElementsByClassName('lyric-line');
-                    for (let i = 0; i < lines.length; i++) {
-                        if (lines[i].dataset.time && data.progressMs >= parseInt(lines[i].dataset.time)) {
+                    for (let i = 0; i < parsedLines.length; i++) {
+                        if (parsedLines[i].startTimeMs <= data.progressMs) {
                             activeIndex = i;
                         }
                     }
-                    
-                    // Display only Previous, Current, and Next lines
-                    for (let i = 0; i < lines.length; i++) {
-                        if (i === activeIndex) {
-                            if (!lines[i].classList.contains('active-line')) {
-                                lines[i].className = 'lyric-line active-line';
-                                lines[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            }
-                        } else if (i === activeIndex - 1 || i === activeIndex + 1) {
-                            lines[i].className = 'lyric-line adjacent-line';
-                        } else {
-                            lines[i].className = 'lyric-line'; // Reverts to opacity: 0
-                        }
+
+                    const prevEl = document.getElementById('prev-line');
+                    const activeEl = document.getElementById('active-line');
+                    const nextEl = document.getElementById('next-line');
+
+                    if (parsedLines.length > 0) {
+                        prevEl.innerText = activeIndex > 0 ? parsedLines[activeIndex - 1].words : "";
+                        activeEl.innerText = activeIndex >= 0 ? parsedLines[activeIndex].words : "♪";
+                        nextEl.innerText = activeIndex + 1 < parsedLines.length ? parsedLines[activeIndex + 1].words : "";
+                    } else {
+                        prevEl.innerText = "";
+                        activeEl.innerText = "♪ " + data.title + " ♪";
+                        nextEl.innerText = "";
                     }
+                } else {
+                    document.getElementById('prev-line').innerText = "";
+                    document.getElementById('active-line').innerText = "Waiting for music...";
+                    document.getElementById('next-line').innerText = "";
                 }
             } catch(e) {
                 console.error(e);
@@ -186,6 +194,11 @@ def index():
     is_authed = 'access_token' in session
     return render_template_string(HTML_TEMPLATE, is_authed=is_authed)
 
+@app.route('/logout', methods=['POST', 'GET'])
+def logout():
+    session.clear()
+    return '', 204
+
 @app.route('/auth', methods=['POST'])
 def auth():
     client_id = request.form.get('client_id').strip()
@@ -193,7 +206,7 @@ def auth():
     session['client_id'] = client_id
     session['client_secret'] = client_secret
     
-    redirect_uri = request.url_root.replace('http://', 'https://').rstrip('/') + 'callback'
+    redirect_uri = request.url_root.replace('http://', 'https://').rstrip('/') + '/callback'
     session['redirect_uri'] = redirect_uri
 
     scope = "user-read-currently-playing"
