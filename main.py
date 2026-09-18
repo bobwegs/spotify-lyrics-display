@@ -14,7 +14,7 @@ HTML_TEMPLATE = """
 <html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>In-Car Lyrics</title>
+    <title>spotify</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/color-thief/2.3.0/color-thief.umd.js"></script>
     <style>
         body { 
@@ -29,7 +29,7 @@ HTML_TEMPLATE = """
             width: 100vw;
             margin: 0; 
             overflow: hidden;
-            transition: background 2s cubic-bezier(0.25, 1, 0.5, 1); 
+            transition: background 2.2s cubic-bezier(0.16, 1, 0.3, 1); 
         }
         .login-container { 
             display: flex;
@@ -39,7 +39,7 @@ HTML_TEMPLATE = """
             width: 90%; 
             max-width: 360px; 
             gap: 16px;
-            animation: fadeIn 0.8s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+            animation: fadeIn 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
         .pill-input { 
             display: flex; 
@@ -55,7 +55,7 @@ HTML_TEMPLATE = """
             backdrop-filter: blur(15px);
             color: white;
             text-align: center;
-            transition: all 0.35s cubic-bezier(0.25, 1, 0.5, 1);
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
             box-shadow: 0 8px 30px rgba(0,0,0,0.4);
         }
         input.pill-input {
@@ -67,7 +67,7 @@ HTML_TEMPLATE = """
         }
         .pill-input:hover {
             border-color: #1DB954;
-            box-shadow: 0 0 20px rgba(29, 185, 84, 0.35);
+            box-shadow: 0 0 22px rgba(29, 185, 84, 0.4);
             transform: translateY(-2px);
         }
         button.pill-button { 
@@ -79,7 +79,7 @@ HTML_TEMPLATE = """
             cursor: pointer; 
             width: 100%; 
             height: 50px;
-            transition: all 0.35s cubic-bezier(0.25, 1, 0.5, 1);
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
             box-shadow: 0 8px 25px rgba(29, 185, 84, 0.4);
         }
         button.pill-button:hover { 
@@ -98,7 +98,7 @@ HTML_TEMPLATE = """
             justify-content: center; 
             text-align: center;
             gap: 4vh;
-            animation: fadeIn 1s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+            animation: fadeIn 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
         
         .lyric-line { 
@@ -107,32 +107,32 @@ HTML_TEMPLATE = """
             overflow: visible;
             padding: 0 20px;
             transform-origin: center center;
-            transition: transform 0.45s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.5s cubic-bezier(0.25, 1, 0.5, 1), filter 0.5s cubic-bezier(0.25, 1, 0.5, 1);
+            transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1), filter 0.6s cubic-bezier(0.16, 1, 0.3, 1);
         }
         
         .adjacent-line { 
-            opacity: 0.3; 
-            font-size: clamp(18px, 3.5vw, 28px);
+            opacity: 0.25; 
+            font-size: clamp(16px, 3.2vw, 26px);
             font-weight: 500;
-            filter: blur(0.4px);
+            filter: blur(0.6px);
         }
         
         .active-line { 
             opacity: 1; 
-            font-size: clamp(26px, 5.5vw, 50px); 
+            font-size: clamp(24px, 5.2vw, 48px); 
             font-weight: 800;
             filter: blur(0px);
-            text-shadow: 0 4px 30px rgba(0,0,0,0.6); 
-            animation: lyricPop 0.5s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+            text-shadow: 0 4px 35px rgba(0,0,0,0.65); 
+            animation: lyricPop 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
 
         @keyframes lyricPop {
-            0% { transform: scale(0.92); opacity: 0.3; filter: blur(2px); }
+            0% { transform: scale(0.90); opacity: 0.2; filter: blur(3px); }
             100% { transform: scale(1); opacity: 1; filter: blur(0px); }
         }
 
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(15px); }
+            from { opacity: 0; transform: translateY(20px); }
             to { opacity: 1; transform: translateY(0); }
         }
         
@@ -285,7 +285,7 @@ HTML_TEMPLATE = """
                         scaleText(activeEl, activeText);
                         activeEl.style.animation = 'none';
                         activeEl.offsetHeight; 
-                        activeEl.style.animation = 'lyricPop 0.5s cubic-bezier(0.25, 1, 0.5, 1) forwards';
+                        activeEl.style.animation = 'lyricPop 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards';
                     }
 
                     scaleText(nextEl, nextText);
