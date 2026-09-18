@@ -54,11 +54,16 @@ HTML_TEMPLATE = """
             background: rgba(20, 20, 20, 0.75); 
             backdrop-filter: blur(15px);
             color: white;
+            text-align: center;
             transition: all 0.35s cubic-bezier(0.25, 1, 0.5, 1);
             box-shadow: 0 8px 30px rgba(0,0,0,0.4);
         }
         input.pill-input {
             outline: none;
+        }
+        input.pill-input::placeholder {
+            color: #777;
+            text-align: center;
         }
         .pill-input:hover {
             border-color: #1DB954;
@@ -139,9 +144,9 @@ HTML_TEMPLATE = """
     {% if not is_authed %}
     <div class="login-container">
         <form action="/auth" method="POST" style="width: 100%; display: flex; flex-direction: column; gap: 16px; align-items: center;">
-            <div class="pill-input" style="background: rgba(15, 15, 15, 0.6); color: #888; cursor: default; font-size: 12px; text-align: center;">{{ redirect_uri }}</div>
-            <input type="text" name="client_id" class="pill-input" autocomplete="off" />
-            <input type="password" name="client_secret" class="pill-input" autocomplete="off" />
+            <div class="pill-input" style="background: rgba(15, 15, 15, 0.6); color: #777; cursor: default; font-size: 12px;">{{ redirect_uri }}</div>
+            <input type="text" name="client_id" class="pill-input" placeholder="client id" autocomplete="off" />
+            <input type="password" name="client_secret" class="pill-input" placeholder="client secret" autocomplete="off" />
             <button type="submit" class="pill-button"></button>
         </form>
     </div>
@@ -227,7 +232,6 @@ HTML_TEMPLATE = """
                             img.onload = () => {
                                 try {
                                     const color = colorThief.getColor(img);
-                                    // Robust luminance scaling for dark, rich ambient themes
                                     const maxC = Math.max(color[0], color[1], color[2], 1);
                                     const scale = Math.min(1, 65 / maxC);
                                     const r = Math.floor(color[0] * scale);
