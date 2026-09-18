@@ -3,6 +3,7 @@ import time
 import requests
 from flask import Flask, request, jsonify, render_template_string
 from playwright.sync_api import sync_playwright
+from playwright_stealth import stealth_sync
 
 app = Flask(__name__)
 
@@ -138,7 +139,10 @@ def login():
             context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
             page = context.new_page()
             
-            page.goto("https://accounts.spotify.com/en/login")
+            # Apply stealth masks before navigating
+            stealth_sync(page)
+            
+            page.goto("https://accounts.spotify.com/en/login", wait_until="networkidle")
             page.fill("#login-username", creds.get('u'))
             page.fill("#login-password", creds.get('p'))
             page.click("#login-button")
