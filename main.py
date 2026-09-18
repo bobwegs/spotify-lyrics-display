@@ -15,7 +15,6 @@ HTML_TEMPLATE = """
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
     <title>In-Car Lyrics</title>
-    <!-- Import ColorThief for dynamic album art theming -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/color-thief/2.3.0/color-thief.umd.js"></script>
     <style>
         body { 
@@ -28,9 +27,9 @@ HTML_TEMPLATE = """
             justify-content: center; 
             height: 100vh; 
             margin: 0; 
-            transition: background 1.5s ease; /* Smooth fade between songs */
+            transition: background 1.5s ease; /* Smooth transition for solid colors */
         }
-        .login-box { background: rgba(40, 40, 40, 0.9); padding: 2rem; border-radius: 12px; text-align: center; width: 80%; max-width: 350px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+        .login-box { background: rgba(40, 40, 40, 0.9); padding: 2rem; border-radius: 12px; text-align: center; width: 85%; max-width: 400px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
         input { display: block; margin: 15px auto; padding: 12px; width: 85%; border-radius: 6px; border: none; font-size: 16px; background: #333; color: white;}
         button { background: #1DB954; color: white; border: none; padding: 14px 20px; border-radius: 30px; font-weight: bold; cursor: pointer; width: 93%; font-size: 16px; transition: transform 0.2s;}
         button:hover { transform: scale(1.04); }
@@ -60,17 +59,23 @@ HTML_TEMPLATE = """
         }
         #lyrics-scroll::-webkit-scrollbar { display: none; }
         
-        /* Spotilyrics formatting */
+        /* Spotify strict 3-line scrollable styling */
         .lyric-line { 
-            font-size: 32px; 
+            font-size: 24px; 
             font-weight: 700; 
             margin: 20px 0; 
-            transition: color 0.4s ease, font-size 0.4s ease, transform 0.4s ease; 
-            transform-origin: left center;
+            transition: all 0.3s ease; 
+            opacity: 0; /* Hides lines outside the 3-line window while keeping scroll height */
+            color: #fff;
         }
-        .past-line { color: rgba(255, 255, 255, 0.4); }
-        .active-line { color: #fff; font-size: 38px; transform: scale(1.02); text-shadow: 0 2px 10px rgba(0,0,0,0.2); }
-        .future-line { color: rgba(0, 0, 0, 0.6); } 
+        .adjacent-line { 
+            opacity: 0.4; 
+        }
+        .active-line { 
+            opacity: 1; 
+            font-size: 38px; 
+            text-shadow: 0 2px 10px rgba(0,0,0,0.2); 
+        }
     </style>
 </head>
 <body>
@@ -78,7 +83,8 @@ HTML_TEMPLATE = """
     {% if not is_authed %}
     <div class="login-box">
         <h2 style="color: #1DB954; margin-top: 0;">Spotify Engine</h2>
-        <p style="color: #b3b3b3; font-size: 14px; margin-bottom: 25px;">Enter your Developer App credentials.</p>
+        <p style="color: #b3b3b3; font-size: 14px; margin-bottom: 10px;">Set this exact Redirect URI in your Spotify Dashboard:</p>
+        <code style="display: block; background: #111; padding: 12px; border-radius: 6px; margin-bottom: 25px; color: #1DB954; font-size: 13px; user-select: all;">https://spotify-lyrics-display.onrender.com/callback</code>
         <form action="/auth" method="POST">
             <input type="text" name="client_id" placeholder="Client ID" required />
             <input type="password" name="client_secret" placeholder="Client Secret" required />
@@ -115,23 +121,21 @@ HTML_TEMPLATE = """
                         scrollBox.dataset.trackId = data.trackId;
                         scrollBox.innerHTML = ''; 
                         
-                        // Handle Album Art and Dynamic Background
                         if (data.albumArt) {
                             const img = document.getElementById('album-cover-img');
                             img.style.display = 'block';
                             img.onload = () => {
                                 const color = colorThief.getColor(img);
-                                // Create a smooth linear gradient fading into dark gray
-                                document.body.style.background = `linear-gradient(145deg, rgb(${color[0]}, ${color[1]}, ${color[2]}) 0%, #121212 80%)`;
+                                // Sets a solid dominant color background
+                                document.body.style.background = `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
                             };
                             img.src = data.albumArt;
                         }
                         
-                        // Populate Lyrics
                         if (data.lines && data.lines.length > 0) {
                             data.lines.forEach((line) => {
                                 const div = document.createElement('div');
-                                div.className = 'lyric-line future-line';
+                                div.className = 'lyric-line';
                                 div.innerText = line.words;
                                 div.dataset.time = line.startTimeMs;
                                 scrollBox.appendChild(div);
@@ -144,7 +148,6 @@ HTML_TEMPLATE = """
                         }
                     }
 
-                    // Calculate active line
                     let activeIndex = -1;
                     const lines = document.getElementsByClassName('lyric-line');
                     for (let i = 0; i < lines.length; i++) {
@@ -153,17 +156,17 @@ HTML_TEMPLATE = """
                         }
                     }
                     
-                    // Apply styles: Past, Active, Future
+                    // Display only Previous, Current, and Next lines
                     for (let i = 0; i < lines.length; i++) {
-                        if (i < activeIndex) {
-                            lines[i].className = 'lyric-line past-line';
-                        } else if (i === activeIndex) {
+                        if (i === activeIndex) {
                             if (!lines[i].classList.contains('active-line')) {
                                 lines[i].className = 'lyric-line active-line';
                                 lines[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
                             }
+                        } else if (i === activeIndex - 1 || i === activeIndex + 1) {
+                            lines[i].className = 'lyric-line adjacent-line';
                         } else {
-                            lines[i].className = 'lyric-line future-line';
+                            lines[i].className = 'lyric-line'; // Reverts to opacity: 0
                         }
                     }
                 }
@@ -190,7 +193,7 @@ def auth():
     session['client_id'] = client_id
     session['client_secret'] = client_secret
     
-    redirect_uri = request.url_root.replace('http://', 'https://').rstrip('/') + '/callback'
+    redirect_uri = request.url_root.replace('http://', 'https://').rstrip('/') + 'callback'
     session['redirect_uri'] = redirect_uri
 
     scope = "user-read-currently-playing"
@@ -291,7 +294,6 @@ def now_playing():
     track_name = player['item']['name']
     artist_name = player['item']['artists'][0]['name']
     
-    # Extract Album Art URL for ColorThief
     album_art = ""
     if player['item'].get('album') and player['item']['album'].get('images'):
         album_art = player['item']['album']['images'][0]['url']
