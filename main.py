@@ -1,15 +1,13 @@
 import os
 import time
 import requests
-from flask import Flask, request, jsonify, render_template_string
+import urllib.parse
+import base64
+import re
+from flask import Flask, request, jsonify, render_template_string, redirect, session
 
 app = Flask(__name__)
-
-SESSION = {
-    "sp_dc": None,
-    "access_token": None,
-    "expires_at": 0
-}
+app.secret_key = "super_secret_car_lyrics_key"
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -17,63 +15,90 @@ HTML_TEMPLATE = """
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
     <title>In-Car Lyrics</title>
+    <!-- Import ColorThief for dynamic album art theming -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/color-thief/2.3.0/color-thief.umd.js"></script>
     <style>
-        body { background: #121212; color: white; font-family: -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-        .login-box { background: #282828; padding: 2rem; border-radius: 8px; text-align: center; width: 80%; max-width: 350px; }
-        input { display: block; margin: 15px auto; padding: 12px; width: 85%; border-radius: 4px; border: none; font-size: 16px; background: #333; color: white;}
-        button { background: #1DB954; color: white; border: none; padding: 12px 20px; border-radius: 20px; font-weight: bold; cursor: pointer; width: 93%; font-size: 16px;}
-        #lyrics-container { display: none; width: 100%; height: 100vh; overflow: hidden; position: relative; text-align: center; flex-direction: column;}
-        #track-header { background: #000; padding: 20px; text-align: center; box-shadow: 0 4px 10px rgba(0,0,0,0.5); z-index: 10;}
-        #track-title { color: #1DB954; margin: 0; font-size: 24px;}
-        #track-artist { color: #b3b3b3; margin: 5px 0 0 0; font-size: 16px;}
-        #lyrics-scroll { flex-grow: 1; overflow-y: auto; padding: 50px 20px; padding-bottom: 50vh; }
-        .lyric-line { font-size: 24px; color: #555; margin: 20px 0; transition: all 0.3s ease; }
-        .active-line { color: #fff; font-size: 32px; font-weight: bold; }
+        body { 
+            background: #121212; 
+            color: white; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
+            height: 100vh; 
+            margin: 0; 
+            transition: background 1.5s ease; /* Smooth fade between songs */
+        }
+        .login-box { background: rgba(40, 40, 40, 0.9); padding: 2rem; border-radius: 12px; text-align: center; width: 80%; max-width: 350px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+        input { display: block; margin: 15px auto; padding: 12px; width: 85%; border-radius: 6px; border: none; font-size: 16px; background: #333; color: white;}
+        button { background: #1DB954; color: white; border: none; padding: 14px 20px; border-radius: 30px; font-weight: bold; cursor: pointer; width: 93%; font-size: 16px; transition: transform 0.2s;}
+        button:hover { transform: scale(1.04); }
+        
+        #lyrics-container { display: flex; width: 100%; height: 100vh; overflow: hidden; position: relative; flex-direction: column;}
+        
+        #track-header { 
+            padding: 30px 20px 10px 30px; 
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            z-index: 10;
+        }
+        #album-cover-img { width: 64px; height: 64px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); display: none; }
+        .header-text { display: flex; flex-direction: column; }
+        #track-title { color: #fff; margin: 0; font-size: 22px; font-weight: bold; text-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+        #track-artist { color: rgba(255,255,255,0.7); margin: 4px 0 0 0; font-size: 16px; font-weight: 500;}
+        
+        #lyrics-scroll { 
+            flex-grow: 1; 
+            overflow-y: auto; 
+            padding: 30px; 
+            padding-bottom: 60vh; 
+            text-align: left;
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        #lyrics-scroll::-webkit-scrollbar { display: none; }
+        
+        /* Spotilyrics formatting */
+        .lyric-line { 
+            font-size: 32px; 
+            font-weight: 700; 
+            margin: 20px 0; 
+            transition: color 0.4s ease, font-size 0.4s ease, transform 0.4s ease; 
+            transform-origin: left center;
+        }
+        .past-line { color: rgba(255, 255, 255, 0.4); }
+        .active-line { color: #fff; font-size: 38px; transform: scale(1.02); text-shadow: 0 2px 10px rgba(0,0,0,0.2); }
+        .future-line { color: rgba(0, 0, 0, 0.6); } 
     </style>
 </head>
 <body>
 
-    <div id="login-ui" class="login-box">
-        <h2 style="color: #1DB954;">Connect Spotify</h2>
-        <p style="color: #b3b3b3; font-size: 14px; margin-bottom: 20px;">Paste your sp_dc cookie below to authenticate.</p>
-        <input type="text" id="sp_dc_input" placeholder="sp_dc cookie value" />
-        <button onclick="doLogin()">Connect Engine</button>
-        <p id="status" style="color: #b3b3b3; font-size: 14px; margin-top: 15px;"></p>
+    {% if not is_authed %}
+    <div class="login-box">
+        <h2 style="color: #1DB954; margin-top: 0;">Spotify Engine</h2>
+        <p style="color: #b3b3b3; font-size: 14px; margin-bottom: 25px;">Enter your Developer App credentials.</p>
+        <form action="/auth" method="POST">
+            <input type="text" name="client_id" placeholder="Client ID" required />
+            <input type="password" name="client_secret" placeholder="Client Secret" required />
+            <button type="submit">Connect to Spotify</button>
+        </form>
     </div>
-
+    {% else %}
     <div id="lyrics-container">
         <div id="track-header">
-            <h3 id="track-title">Waiting for music...</h3>
-            <p id="track-artist"></p>
+            <img id="album-cover-img" crossorigin="anonymous" />
+            <div class="header-text">
+                <h3 id="track-title">Waiting for music...</h3>
+                <p id="track-artist"></p>
+            </div>
         </div>
         <div id="lyrics-scroll"></div>
     </div>
 
     <script>
-        async function doLogin() {
-            const spDcValue = document.getElementById('sp_dc_input').value.trim();
-            if (!spDcValue) {
-                document.getElementById('status').innerText = 'Please enter a cookie.';
-                return;
-            }
-            
-            document.getElementById('status').innerText = 'Verifying cookie...';
-            const res = await fetch('/api/login', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ sp_dc: spDcValue })
-            });
-            
-            const data = await res.json();
-            
-            if(data.success) {
-                document.getElementById('login-ui').style.display = 'none';
-                document.getElementById('lyrics-container').style.display = 'flex';
-                setInterval(pollLyrics, 2000);
-            } else {
-                document.getElementById('status').innerText = 'Error: ' + data.error;
-            }
-        }
+        const colorThief = new ColorThief();
 
         async function pollLyrics() {
             try {
@@ -90,31 +115,55 @@ HTML_TEMPLATE = """
                         scrollBox.dataset.trackId = data.trackId;
                         scrollBox.innerHTML = ''; 
                         
-                        data.lines.forEach((line, index) => {
+                        // Handle Album Art and Dynamic Background
+                        if (data.albumArt) {
+                            const img = document.getElementById('album-cover-img');
+                            img.style.display = 'block';
+                            img.onload = () => {
+                                const color = colorThief.getColor(img);
+                                // Create a smooth linear gradient fading into dark gray
+                                document.body.style.background = `linear-gradient(145deg, rgb(${color[0]}, ${color[1]}, ${color[2]}) 0%, #121212 80%)`;
+                            };
+                            img.src = data.albumArt;
+                        }
+                        
+                        // Populate Lyrics
+                        if (data.lines && data.lines.length > 0) {
+                            data.lines.forEach((line) => {
+                                const div = document.createElement('div');
+                                div.className = 'lyric-line future-line';
+                                div.innerText = line.words;
+                                div.dataset.time = line.startTimeMs;
+                                scrollBox.appendChild(div);
+                            });
+                        } else {
                             const div = document.createElement('div');
-                            div.className = 'lyric-line';
-                            div.innerText = line.words;
-                            div.dataset.time = line.startTimeMs;
+                            div.className = 'lyric-line active-line';
+                            div.innerText = "♪";
                             scrollBox.appendChild(div);
-                        });
+                        }
                     }
 
+                    // Calculate active line
                     let activeIndex = -1;
                     const lines = document.getElementsByClassName('lyric-line');
                     for (let i = 0; i < lines.length; i++) {
-                        if (data.progressMs >= parseInt(lines[i].dataset.time)) {
+                        if (lines[i].dataset.time && data.progressMs >= parseInt(lines[i].dataset.time)) {
                             activeIndex = i;
                         }
                     }
                     
+                    // Apply styles: Past, Active, Future
                     for (let i = 0; i < lines.length; i++) {
-                        if (i === activeIndex) {
+                        if (i < activeIndex) {
+                            lines[i].className = 'lyric-line past-line';
+                        } else if (i === activeIndex) {
                             if (!lines[i].classList.contains('active-line')) {
-                                lines[i].classList.add('active-line');
+                                lines[i].className = 'lyric-line active-line';
                                 lines[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
                             }
                         } else {
-                            lines[i].classList.remove('active-line');
+                            lines[i].className = 'lyric-line future-line';
                         }
                     }
                 }
@@ -122,102 +171,148 @@ HTML_TEMPLATE = """
                 console.error(e);
             }
         }
+        setInterval(pollLyrics, 1000);
     </script>
+    {% endif %}
 </body>
 </html>
 """
 
 @app.route('/')
 def index():
-    return render_template_string(HTML_TEMPLATE)
+    is_authed = 'access_token' in session
+    return render_template_string(HTML_TEMPLATE, is_authed=is_authed)
 
-@app.route('/api/login', methods=['POST'])
-def login():
-    data = request.json
-    sp_dc = data.get('sp_dc')
+@app.route('/auth', methods=['POST'])
+def auth():
+    client_id = request.form.get('client_id').strip()
+    client_secret = request.form.get('client_secret').strip()
+    session['client_id'] = client_id
+    session['client_secret'] = client_secret
     
-    if sp_dc:
-        SESSION['sp_dc'] = sp_dc
-        SESSION['expires_at'] = 0 
-        
-        try:
-            get_access_token()
-            return jsonify({"success": True})
-        except Exception as e:
-            # This will now print the exact error code to your screen
-            return jsonify({"success": False, "error": str(e)})
-            
-    return jsonify({"success": False, "error": "Cookie missing."})
+    redirect_uri = request.url_root.replace('http://', 'https://').rstrip('/') + '/callback'
+    session['redirect_uri'] = redirect_uri
 
-def get_access_token():
-    if time.time() < SESSION['expires_at']:
-        return SESSION['access_token']
-        
-    # Clean the cookie just in case you accidentally pasted "sp_dc=..."
-    sp_dc_clean = SESSION['sp_dc'].replace('sp_dc=', '').strip()
-        
-    res = requests.get(
-        "https://open.spotify.com/get_access_token?reason=transport&productType=web_player",
+    scope = "user-read-currently-playing"
+    
+    auth_url = "https://accounts.spotify.com/authorize?" + urllib.parse.urlencode({
+        "response_type": "code",
+        "client_id": client_id,
+        "scope": scope,
+        "redirect_uri": redirect_uri
+    })
+    return redirect(auth_url)
+
+@app.route('/callback')
+def callback():
+    code = request.args.get('code')
+    if not code:
+        return "Error: Authorization failed. Try again."
+
+    client_id = session.get('client_id')
+    client_secret = session.get('client_secret')
+    redirect_uri = session.get('redirect_uri')
+
+    auth_base64 = str(base64.b64encode(f"{client_id}:{client_secret}".encode("utf-8")), "utf-8")
+
+    res = requests.post(
+        "https://accounts.spotify.com/api/token",
         headers={
-            "Cookie": f"sp_dc={sp_dc_clean}", 
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "application/json",
-            "App-Platform": "WebPlayer"
+            "Authorization": f"Basic {auth_base64}",
+            "Content-Type": "application/x-www-form-urlencoded"
+        },
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect_uri
         }
     )
-    
+
     if not res.ok:
-        raise Exception(f"Spotify Blocked. Status Code: {res.status_code}")
-        
+        return f"Failed to authenticate with Spotify: {res.text}"
+
     data = res.json()
-    if 'accessToken' not in data:
-        raise Exception("Connected, but no token returned.")
+    session['access_token'] = data.get('access_token')
+    session['refresh_token'] = data.get('refresh_token')
+    session['expires_at'] = time.time() + data.get('expires_in', 3600) - 60
+
+    return redirect('/')
+
+def get_valid_token():
+    if time.time() < session.get('expires_at', 0):
+        return session.get('access_token')
         
-    SESSION['access_token'] = data.get('accessToken')
-    SESSION['expires_at'] = time.time() + (data.get('accessTokenExpirationTimestampMs', 300000) / 1000) - 60
-    return SESSION['access_token']
+    auth_base64 = str(base64.b64encode(f"{session['client_id']}:{session['client_secret']}".encode("utf-8")), "utf-8")
+    res = requests.post(
+        "https://accounts.spotify.com/api/token",
+        headers={"Authorization": f"Basic {auth_base64}", "Content-Type": "application/x-www-form-urlencoded"},
+        data={"grant_type": "refresh_token", "refresh_token": session['refresh_token']}
+    )
+    
+    if res.ok:
+        data = res.json()
+        session['access_token'] = data.get('access_token')
+        session['expires_at'] = time.time() + data.get('expires_in', 3600) - 60
+        return session['access_token']
+    return None
+
+def parse_lrc(lrc_text):
+    lines = []
+    for line in lrc_text.split('\n'):
+        match = re.match(r'\[(\d+):(\d+\.\d+)\](.*)', line)
+        if match:
+            mins, secs, words = int(match.group(1)), float(match.group(2)), match.group(3).strip()
+            if words:
+                lines.append({"startTimeMs": int((mins * 60 + secs) * 1000), "words": words})
+    return lines
 
 @app.route('/api/now-playing')
 def now_playing():
-    if not SESSION.get('sp_dc'):
-        return jsonify({"isPlaying": False, "error": "No session active."})
+    if not session.get('access_token'):
+        return jsonify({"isPlaying": False, "error": "Not logged in"})
         
-    try:
-        token = get_access_token()
+    token = get_valid_token()
+    if not token:
+         return jsonify({"isPlaying": False, "error": "Token refresh failed"})
+         
+    player_res = requests.get(
+        "https://api.spotify.com/v1/me/player/currently-playing",
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    
+    if player_res.status_code == 204 or not player_res.ok:
+        return jsonify({"isPlaying": False})
         
-        player_res = requests.get(
-            "https://api.spotify.com/v1/me/player/currently-playing",
-            headers={"Authorization": f"Bearer {token}"}
-        )
+    player = player_res.json()
+    if not player.get('item'):
+        return jsonify({"isPlaying": False})
         
-        if player_res.status_code == 204 or not player_res.ok:
-            return jsonify({"isPlaying": False})
-            
-        player = player_res.json()
-        if not player.get('item'):
-            return jsonify({"isPlaying": False})
-            
-        track_id = player['item']['id']
-        
-        lyrics_res = requests.get(
-            f"https://spclient.wg.spotify.com/color-lyrics/v2/track/{track_id}?format=json&market=from_token",
-            headers={"Authorization": f"Bearer {token}", "App-Platform": "WebPlayer"}
-        )
-        
-        lines = []
-        if lyrics_res.ok:
-            lines = lyrics_res.json().get('lyrics', {}).get('lines', [])
-            
-        return jsonify({
-            "isPlaying": player.get('is_playing', False),
-            "progressMs": player.get('progress_ms', 0),
-            "title": player['item']['name'],
-            "artist": ", ".join([a['name'] for a in player['item']['artists']]),
-            "trackId": track_id,
-            "lines": lines
-        })
-    except Exception as e:
-        return jsonify({"isPlaying": False, "error": str(e)})
+    track_id = player['item']['id']
+    track_name = player['item']['name']
+    artist_name = player['item']['artists'][0]['name']
+    
+    # Extract Album Art URL for ColorThief
+    album_art = ""
+    if player['item'].get('album') and player['item']['album'].get('images'):
+        album_art = player['item']['album']['images'][0]['url']
+    
+    lines = []
+    lrc_res = requests.get("https://lrclib.net/api/get", params={"track_name": track_name, "artist_name": artist_name})
+    
+    if lrc_res.ok:
+        lrc_data = lrc_res.json()
+        if lrc_data.get('syncedLyrics'):
+            lines = parse_lrc(lrc_data['syncedLyrics'])
+
+    return jsonify({
+        "isPlaying": player.get('is_playing', False),
+        "progressMs": player.get('progress_ms', 0),
+        "title": track_name,
+        "artist": artist_name,
+        "albumArt": album_art,
+        "trackId": track_id,
+        "lines": lines
+    })
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
