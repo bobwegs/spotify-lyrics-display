@@ -15,15 +15,16 @@ HTML_TEMPLATE = """
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Spotify</title>
+    <!-- Geometric All-Caps Premium Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;800;900&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/color-thief/2.3.0/color-thief.umd.js"></script>
     <style>
         body { 
             background-color: #121212; 
             color: white; 
-            /* Clean, geometric, uppercase font style */
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
             text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 1.5px;
             
             display: flex; 
             flex-direction: column; 
@@ -41,14 +42,14 @@ HTML_TEMPLATE = """
             content: '';
             position: absolute;
             top: 0; left: 0; right: 0; bottom: 0;
-            background: radial-gradient(circle at 50% 50%, rgba(255,255,255,0.04) 0%, rgba(0,0,0,0) 70%);
+            background: radial-gradient(circle at 50% 50%, rgba(255,255,255,0.05) 0%, rgba(0,0,0,0) 70%);
             animation: breathe 8s infinite alternate cubic-bezier(0.4, 0, 0.2, 1);
             pointer-events: none;
             z-index: 0;
         }
 
         @keyframes breathe {
-            0% { transform: scale(1); opacity: 0.4; }
+            0% { transform: scale(1); opacity: 0.3; }
             100% { transform: scale(1.4); opacity: 1; }
         }
 
@@ -73,7 +74,7 @@ HTML_TEMPLATE = """
             box-sizing: border-box;
             border-radius: 14px; 
             border: 1px solid rgba(255,255,255,0.1); 
-            font-size: 14px; 
+            font-size: 13px; 
             font-weight: 700;
             font-family: inherit;
             text-transform: inherit;
@@ -93,7 +94,11 @@ HTML_TEMPLATE = """
             transform: translateY(-2px);
         }
         
-        button.pill-button { 
+        .pill-button { 
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
             background: #1DB954; 
             color: white; 
             border: none; 
@@ -101,8 +106,9 @@ HTML_TEMPLATE = """
             border-radius: 14px; 
             cursor: pointer; 
             width: 100%; 
+            box-sizing: border-box;
             height: 50px;
-            font-size: 15px;
+            font-size: 14px;
             font-weight: 800;
             font-family: inherit;
             text-transform: inherit;
@@ -110,7 +116,7 @@ HTML_TEMPLATE = """
             transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
             box-shadow: 0 8px 25px rgba(29, 185, 84, 0.4);
         }
-        button.pill-button:hover { 
+        .pill-button:hover { 
             transform: translateY(-2px) scale(1.02); 
             background: #1ed760;
             box-shadow: 0 12px 30px rgba(29, 185, 84, 0.6);
@@ -147,28 +153,32 @@ HTML_TEMPLATE = """
         }
         
         .adjacent-line .lyric-inner { 
-            opacity: 0.25; 
-            font-size: clamp(16px, 3.5vw, 28px);
+            opacity: 0.3; 
+            font-size: clamp(16px, 3.5vw, 26px);
             font-weight: 600;
             filter: blur(1.5px);
         }
         
         .active-line .lyric-inner { 
             opacity: 1; 
-            font-size: clamp(24px, 5.5vw, 50px); 
+            font-size: clamp(24px, 5.5vw, 46px); 
             font-weight: 900;
             filter: blur(0px);
             text-shadow: 0 4px 35px rgba(0,0,0,0.65); 
         }
 
-        /* Silky smooth text reveal animations */
+        /* Silky smooth text crossfade and reveal animations */
+        @keyframes fadeOutUp {
+            0% { transform: translateY(0); opacity: 1; filter: blur(0px); }
+            100% { transform: translateY(-15px); opacity: 0; filter: blur(4px); }
+        }
         @keyframes swapActive {
             0% { transform: translateY(15px) scale(0.95); opacity: 0; filter: blur(5px); }
             100% { transform: translateY(0) scale(1); opacity: 1; filter: blur(0px); }
         }
         @keyframes swapAdjacent {
             0% { transform: translateY(10px); opacity: 0; filter: blur(4px); }
-            100% { transform: translateY(0); opacity: 0.25; filter: blur(1.5px); }
+            100% { transform: translateY(0); opacity: 0.3; filter: blur(1.5px); }
         }
 
         @keyframes fadeIn {
@@ -181,12 +191,18 @@ HTML_TEMPLATE = """
 </head>
 <body>
 
-    {% if not is_authed %}
+    {% if error %}
+    <div class="login-container">
+        <h2 style="color: #ff4d4d; letter-spacing: 3px; font-weight: 900; margin-bottom: 5px;">ERROR</h2>
+        <p style="color: #aaa; font-size: 11px; text-align: center; margin-bottom: 25px; font-weight: 600; letter-spacing: 1px;">{{ error }}</p>
+        <a href="/" class="pill-button" style="background: rgba(30, 30, 30, 0.9); border: 1px solid rgba(255,255,255,0.1);">TRY AGAIN</a>
+    </div>
+    {% elif not is_authed %}
     <div class="login-container">
         <form action="/auth" method="POST" style="width: 100%; display: flex; flex-direction: column; gap: 16px; align-items: center;">
-            <div class="pill-input" style="background: rgba(15, 15, 15, 0.6); color: #777; cursor: default; font-size: 12px;">{{ redirect_uri }}</div>
-            <input type="text" name="client_id" class="pill-input" placeholder="client id" autocomplete="off" />
-            <input type="text" name="client_secret" class="pill-input" placeholder="client secret" autocomplete="off" />
+            <div class="pill-input" style="background: rgba(15, 15, 15, 0.6); color: #777; cursor: default; font-size: 11px;">{{ redirect_uri }}</div>
+            <input type="text" name="client_id" class="pill-input" placeholder="client id" autocomplete="off" required />
+            <input type="text" name="client_secret" class="pill-input" placeholder="client secret" autocomplete="off" required />
             <button type="submit" class="pill-button">connect</button>
         </form>
     </div>
@@ -233,47 +249,68 @@ HTML_TEMPLATE = """
             navigator.sendBeacon('/logout');
         });
 
-        // The new split-engine updating function: layout scales smoothly, text animates dynamically
+        // Split-engine updating function: Seamless crossfades with zero teleportation glitches
         function updateLine(elId, text, isActive) {
             const el = document.getElementById(elId);
             const inner = el.querySelector('.lyric-inner');
             
-            if (inner.innerText !== text) {
-                inner.style.animation = 'none';
-                inner.offsetHeight; // trigger browser reflow
-                inner.innerText = text;
+            if (inner.dataset.currentText !== text) {
+                inner.dataset.currentText = text;
+                
+                // Track animation sequence to prevent overlaps
+                let seq = (parseInt(inner.dataset.seq) || 0) + 1;
+                inner.dataset.seq = seq;
 
-                // 1. Calculate auto-scale for the outer container so text never breaks to a new line
-                el.style.transform = 'none';
-                const containerWidth = el.clientWidth - 40;
-                const textWidth = inner.scrollWidth;
-                if (textWidth > containerWidth && containerWidth > 0) {
-                    const scaleFactor = containerWidth / textWidth;
-                    el.style.transform = `scale(${scaleFactor})`;
-                } else {
-                    el.style.transform = 'scale(1)';
+                // 1. Smoothly fade out the old text upward
+                if (inner.innerText.trim() !== "") {
+                    inner.style.animation = 'fadeOutUp 0.25s cubic-bezier(0.25, 1, 0.5, 1) forwards';
                 }
 
-                // 2. Apply silky smooth popping animation to the inner text
-                if (text.trim() !== "") {
-                    if (isActive) {
-                        inner.style.animation = 'swapActive 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards';
+                // 2. Wait exactly 250ms (matching our look-ahead offset) before swapping the new text in
+                setTimeout(() => {
+                    if (parseInt(inner.dataset.seq) !== seq) return;
+                    
+                    inner.innerText = text;
+
+                    // Dynamically auto-scale outer container to prevent wrapping
+                    el.style.transform = 'none';
+                    const containerWidth = el.clientWidth - 40;
+                    const textWidth = inner.scrollWidth;
+                    if (textWidth > containerWidth && containerWidth > 0) {
+                        const scaleFactor = containerWidth / textWidth;
+                        el.style.transform = `scale(${scaleFactor})`;
                     } else {
-                        inner.style.animation = 'swapAdjacent 0.65s cubic-bezier(0.25, 1, 0.5, 1) forwards';
+                        el.style.transform = 'scale(1)';
                     }
-                }
+
+                    // Glide in the new text exactly on beat
+                    if (text.trim() !== "") {
+                        if (isActive) {
+                            inner.style.animation = 'swapActive 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards';
+                        } else {
+                            inner.style.animation = 'swapAdjacent 0.5s cubic-bezier(0.25, 1, 0.5, 1) forwards';
+                        }
+                    } else {
+                        inner.style.animation = 'none';
+                    }
+                }, 250);
             }
         }
 
         async function pollServer() {
             try {
+                const fetchStart = performance.now();
                 const res = await fetch('/api/now-playing');
                 const data = await res.json();
+                const fetchEnd = performance.now();
+                
+                // Calculate network latency to keep the local clock perfectly aligned
+                const networkLatency = (fetchEnd - fetchStart) / 2;
                 
                 if (data.isPlaying) {
                     isPlaying = true;
                     serverProgress = data.progressMs;
-                    serverTimestamp = performance.now();
+                    serverTimestamp = performance.now() - networkLatency;
 
                     if (cachedTrackId !== data.trackId) {
                         cachedTrackId = data.trackId;
@@ -311,7 +348,7 @@ HTML_TEMPLATE = """
             }
         }
 
-        // Tighter polling (750ms) to ensure playback stays ruthlessly synced without delay
+        // Tighter polling (750ms) to ensure playback stays ruthlessly synced
         setInterval(pollServer, 750);
         pollServer();
 
@@ -321,8 +358,9 @@ HTML_TEMPLATE = """
 
                 let activeIndex = -1;
                 for (let i = 0; i < parsedLines.length; i++) {
-                    // Lead the lyrics slightly by 100ms so they animate right as the word is spoken
-                    if (parsedLines[i].startTimeMs <= currentProgress + 100) {
+                    // +250ms look-ahead: Triggers the crossfade exactly 250ms early, 
+                    // so the new lyric pops into place precisely as the word is sung.
+                    if (parsedLines[i].startTimeMs <= currentProgress + 250) {
                         activeIndex = i;
                     }
                 }
@@ -347,7 +385,6 @@ HTML_TEMPLATE = """
         }
         requestAnimationFrame(animationLoop);
     </script>
-    {% endif %}
 </body>
 </html>
 """
@@ -355,8 +392,9 @@ HTML_TEMPLATE = """
 @app.route('/')
 def index():
     is_authed = 'access_token' in session
+    error_msg = request.args.get('error')
     redirect_uri = request.url_root.replace('http://', 'https://').rstrip('/') + '/callback'
-    return render_template_string(HTML_TEMPLATE, is_authed=is_authed, redirect_uri=redirect_uri)
+    return render_template_string(HTML_TEMPLATE, is_authed=is_authed, redirect_uri=redirect_uri, error=error_msg)
 
 @app.route('/logout', methods=['POST', 'GET'])
 def logout():
@@ -367,8 +405,14 @@ def logout():
 
 @app.route('/auth', methods=['POST'])
 def auth():
-    client_id = request.form.get('client_id').strip()
-    client_secret = request.form.get('client_secret').strip()
+    client_id = request.form.get('client_id')
+    client_secret = request.form.get('client_secret')
+    
+    if not client_id or not client_secret:
+        return redirect(f'/?error={urllib.parse.quote("Missing Credentials")}')
+        
+    client_id = client_id.strip()
+    client_secret = client_secret.strip()
     session['client_id'] = client_id
     session['client_secret'] = client_secret
     
@@ -389,11 +433,14 @@ def auth():
 def callback():
     code = request.args.get('code')
     if not code:
-        return "Error: Authorization failed. Try again."
+        return redirect(f'/?error={urllib.parse.quote("Authorization Cancelled")}')
 
     client_id = session.get('client_id')
     client_secret = session.get('client_secret')
     redirect_uri = session.get('redirect_uri')
+    
+    if not client_id or not client_secret:
+        return redirect(f'/?error={urllib.parse.quote("Session Expired")}')
 
     auth_base64 = str(base64.b64encode(f"{client_id}:{client_secret}".encode("utf-8")), "utf-8")
 
@@ -411,7 +458,7 @@ def callback():
     )
 
     if not res.ok:
-        return f"Failed to authenticate with Spotify: {res.text}"
+        return redirect(f'/?error={urllib.parse.quote("Invalid Client ID or Secret")}')
 
     data = res.json()
     session['access_token'] = data.get('access_token')
