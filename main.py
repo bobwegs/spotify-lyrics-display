@@ -140,12 +140,12 @@ def login():
         SESSION['sp_dc'] = sp_dc
         SESSION['expires_at'] = 0 
         
-        # Test the cookie immediately by attempting to grab a token
         try:
             get_access_token()
             return jsonify({"success": True})
         except Exception as e:
-            return jsonify({"success": False, "error": "Invalid cookie or could not fetch token."})
+            # This will now print the exact error code to your screen
+            return jsonify({"success": False, "error": str(e)})
             
     return jsonify({"success": False, "error": "Cookie missing."})
 
@@ -153,15 +153,26 @@ def get_access_token():
     if time.time() < SESSION['expires_at']:
         return SESSION['access_token']
         
+    # Clean the cookie just in case you accidentally pasted "sp_dc=..."
+    sp_dc_clean = SESSION['sp_dc'].replace('sp_dc=', '').strip()
+        
     res = requests.get(
         "https://open.spotify.com/get_access_token?reason=transport&productType=web_player",
-        headers={"Cookie": f"sp_dc={SESSION['sp_dc']}", "User-Agent": "Mozilla/5.0"}
+        headers={
+            "Cookie": f"sp_dc={sp_dc_clean}", 
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/json",
+            "App-Platform": "WebPlayer"
+        }
     )
     
     if not res.ok:
-        raise Exception("Failed to fetch token. Is the sp_dc correct?")
+        raise Exception(f"Spotify Blocked. Status Code: {res.status_code}")
         
     data = res.json()
+    if 'accessToken' not in data:
+        raise Exception("Connected, but no token returned.")
+        
     SESSION['access_token'] = data.get('accessToken')
     SESSION['expires_at'] = time.time() + (data.get('accessTokenExpirationTimestampMs', 300000) / 1000) - 60
     return SESSION['access_token']
