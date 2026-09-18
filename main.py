@@ -4,7 +4,7 @@ import requests
 import urllib.parse
 import base64
 import re
-from flask import Flask, request, jsonify, render_template_string, redirect, session
+from flask import Flask, request, jsonify, render_template_string, redirect, session, make_response
 
 app = Flask(__name__)
 app.secret_key = "super_secret_car_lyrics_key"
@@ -44,7 +44,6 @@ HTML_TEMPLATE = """
         button { background: #1DB954; color: white; border: none; padding: 14px 20px; border-radius: 30px; font-weight: bold; cursor: pointer; width: 93%; font-size: 16px; transition: transform 0.2s;}
         button:hover { transform: scale(1.04); }
         
-        /* Fixed 3-line dead-center layout */
         #lyrics-container { 
             display: flex; 
             width: 90vw; 
@@ -63,7 +62,6 @@ HTML_TEMPLATE = """
             padding: 0 20px;
         }
         
-        /* Adjacent (Previous/Next) lines: dimmed, smaller, blurred */
         .adjacent-line { 
             opacity: 0.35; 
             font-size: clamp(18px, 3.5vw, 30px);
@@ -73,7 +71,6 @@ HTML_TEMPLATE = """
             transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
         }
         
-        /* Active line: dead-center, large, bright, animated */
         .active-line { 
             opacity: 1; 
             font-size: clamp(26px, 5.5vw, 52px); 
@@ -125,7 +122,6 @@ HTML_TEMPLATE = """
         let isPlaying = false;
         let lastActiveIndex = -1;
 
-        // Robust Wake Lock implementation to keep screen alive
         async function requestWakeLock() {
             try {
                 if ('wakeLock' in navigator) {
@@ -147,13 +143,10 @@ HTML_TEMPLATE = """
 
         requestWakeLock();
 
-        // Guaranteed auto-logout on refresh, navigation, or tab close
         window.addEventListener('beforeunload', () => {
             navigator.sendBeacon('/logout');
-            document.cookie = "session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
         });
 
-        // Background sync to fetch playback state and progress from server
         async function pollServer() {
             try {
                 const res = await fetch('/api/now-playing');
@@ -194,7 +187,6 @@ HTML_TEMPLATE = """
         setInterval(pollServer, 2000);
         pollServer();
 
-        // 60FPS animation loop for instant, buttery-smooth line tracking and transitions
         function animationLoop() {
             if (isPlaying && parsedLines.length > 0) {
                 const currentProgress = serverProgress + (performance.now() - serverTimestamp);
@@ -246,7 +238,9 @@ def index():
 @app.route('/logout', methods=['POST', 'GET'])
 def logout():
     session.clear()
-    return '', 204
+    resp = make_response('', 204)
+    resp.set_cookie('session', '', expires=0)
+    return resp
 
 @app.route('/auth', methods=['POST'])
 def auth():
