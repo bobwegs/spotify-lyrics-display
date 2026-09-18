@@ -29,20 +29,54 @@ HTML_TEMPLATE = """
             width: 100vw;
             margin: 0; 
             overflow: hidden;
-            transition: background 1.5s cubic-bezier(0.4, 0, 0.2, 1); 
+            transition: background 1.8s cubic-bezier(0.4, 0, 0.2, 1); 
         }
         .login-box { 
-            background: rgba(40, 40, 40, 0.9); 
-            padding: 2rem; 
-            border-radius: 12px; 
+            background: rgba(40, 40, 40, 0.85); 
+            backdrop-filter: blur(12px);
+            padding: 2.5rem; 
+            border-radius: 16px; 
             text-align: center; 
             width: 85%; 
             max-width: 400px; 
-            box-shadow: 0 8px 24px rgba(0,0,0,0.5); 
+            box-shadow: 0 12px 40px rgba(0,0,0,0.6); 
+            animation: fadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
-        input { display: block; margin: 15px auto; padding: 12px; width: 85%; border-radius: 6px; border: none; font-size: 16px; background: #333; color: white;}
-        button { background: #1DB954; color: white; border: none; padding: 14px 20px; border-radius: 30px; font-weight: bold; cursor: pointer; width: 93%; font-size: 16px; transition: transform 0.2s;}
-        button:hover { transform: scale(1.04); }
+        input { 
+            display: block; 
+            margin: 15px auto; 
+            padding: 14px; 
+            width: 85%; 
+            border-radius: 8px; 
+            border: 1px solid rgba(255,255,255,0.1); 
+            font-size: 16px; 
+            background: rgba(20,20,20,0.8); 
+            color: white;
+            transition: all 0.3s ease;
+        }
+        input:focus {
+            outline: none;
+            border-color: #1DB954;
+            box-shadow: 0 0 12px rgba(29, 185, 84, 0.4);
+        }
+        button { 
+            background: #1DB954; 
+            color: white; 
+            border: none; 
+            padding: 14px 20px; 
+            border-radius: 30px; 
+            font-weight: bold; 
+            cursor: pointer; 
+            width: 93%; 
+            font-size: 16px; 
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 15px rgba(29, 185, 84, 0.3);
+        }
+        button:hover { 
+            transform: scale(1.04); 
+            background: #1ed760;
+            box-shadow: 0 6px 20px rgba(29, 185, 84, 0.5);
+        }
         
         #lyrics-container { 
             display: flex; 
@@ -53,7 +87,8 @@ HTML_TEMPLATE = """
             align-items: center; 
             justify-content: center; 
             text-align: center;
-            gap: 3.5vh;
+            gap: 4vh;
+            animation: fadeIn 1s ease forwards;
         }
         
         .lyric-line { 
@@ -63,27 +98,32 @@ HTML_TEMPLATE = """
         }
         
         .adjacent-line { 
-            opacity: 0.35; 
-            font-size: clamp(18px, 3.5vw, 30px);
-            font-weight: 600;
-            filter: blur(0.3px);
-            transform: scale(0.97);
-            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            opacity: 0.3; 
+            font-size: clamp(18px, 3.5vw, 28px);
+            font-weight: 500;
+            filter: blur(0.4px);
+            transform: scale(0.95);
+            transition: all 0.5s cubic-bezier(0.25, 1, 0.5, 1);
         }
         
         .active-line { 
             opacity: 1; 
-            font-size: clamp(26px, 5.5vw, 52px); 
+            font-size: clamp(26px, 5.5vw, 50px); 
             font-weight: 800;
             filter: blur(0px);
             transform: scale(1);
-            text-shadow: 0 4px 25px rgba(0,0,0,0.5); 
-            animation: lyricPop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+            text-shadow: 0 4px 30px rgba(0,0,0,0.6); 
+            animation: lyricPop 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
         }
 
         @keyframes lyricPop {
-            0% { transform: scale(0.92); opacity: 0.4; }
-            100% { transform: scale(1); opacity: 1; }
+            0% { transform: scale(0.92); opacity: 0.3; filter: blur(2px); }
+            100% { transform: scale(1); opacity: 1; filter: blur(0px); }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
         
         #album-art-hidden { display: none; }
@@ -93,9 +133,9 @@ HTML_TEMPLATE = """
 
     {% if not is_authed %}
     <div class="login-box">
-        <h2 style="color: #1DB954; margin-top: 0;">Spotify Engine</h2>
-        <p style="color: #b3b3b3; font-size: 14px; margin-bottom: 10px;">Set this exact Redirect URI in your Spotify Dashboard:</p>
-        <code style="display: block; background: #111; padding: 12px; border-radius: 6px; margin-bottom: 25px; color: #1DB954; font-size: 13px; user-select: all;">https://spotify-lyrics-display.onrender.com/callback</code>
+        <h2 style="color: #1DB954; margin-top: 0; font-weight: 800; letter-spacing: -0.5px;">Spotify Engine</h2>
+        <p style="color: #b3b3b3; font-size: 14px; margin-bottom: 12px; line-height: 1.4;">Set this exact Redirect URI in your Spotify Dashboard:</p>
+        <code style="display: block; background: rgba(0,0,0,0.4); padding: 12px; border-radius: 8px; margin-bottom: 25px; color: #1DB954; font-size: 12px; user-select: all; border: 1px solid rgba(255,255,255,0.05);">https://spotify-lyrics-display.onrender.com/callback</code>
         <form action="/auth" method="POST">
             <input type="text" name="client_id" placeholder="Client ID" required />
             <input type="password" name="client_secret" placeholder="Client Secret" required />
@@ -162,6 +202,11 @@ HTML_TEMPLATE = """
                         parsedLines = data.lines || [];
                         lastActiveIndex = -1;
 
+                        // Instantly clear old lyrics to avoid hanging text when switching tracks
+                        document.getElementById('prev-line').innerText = '';
+                        document.getElementById('active-line').innerText = '';
+                        document.getElementById('next-line').innerText = '';
+
                         if (data.albumArt) {
                             const img = document.getElementById('album-art-hidden');
                             img.onload = () => {
@@ -215,11 +260,16 @@ HTML_TEMPLATE = """
                         activeEl.innerText = activeText;
                         activeEl.style.animation = 'none';
                         activeEl.offsetHeight; 
-                        activeEl.style.animation = 'lyricPop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards';
+                        activeEl.style.animation = 'lyricPop 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards';
                     }
 
                     if (nextEl.innerText !== nextText) nextEl.innerText = nextText;
                 }
+            } else {
+                // Clear out if no parsed lines exist for the current track
+                document.getElementById('prev-line').innerText = '';
+                document.getElementById('active-line').innerText = '';
+                document.getElementById('next-line').innerText = '';
             }
             requestAnimationFrame(animationLoop);
         }
@@ -358,24 +408,11 @@ def now_playing():
     
     lines = []
     
-    # 1. Try exact match on LRCLIB via /api/get
-    lrc_res = requests.get("https://lrclib.net/api/get", params={
-        "track_name": track_name, 
-        "artist_name": artist_name,
-        "album_name": album_name,
-        "duration": duration_secs
-    }, headers={"User-Agent": "InCarLyricsApp/1.0"})
-    
-    if lrc_res.ok:
-        lrc_data = lrc_res.json()
-        if lrc_data.get('syncedLyrics'):
-            lines = parse_lrc(lrc_data['syncedLyrics'])
-            
-    # 2. Fallback to LRCLIB search if exact get fails or has no synced lyrics
-    if not lines:
+    # 1. Search LRCLIB first as it handles metadata differences (features, remasters) far more robustly than exact GET
+    try:
         search_res = requests.get("https://lrclib.net/api/search", params={
             "q": f"{track_name} {artist_name}"
-        }, headers={"User-Agent": "InCarLyricsApp/1.0"})
+        }, headers={"User-Agent": "InCarLyricsApp/1.0"}, timeout=3)
         
         if search_res.ok:
             search_data = search_res.json()
@@ -383,6 +420,25 @@ def now_playing():
                 if track.get('syncedLyrics'):
                     lines = parse_lrc(track['syncedLyrics'])
                     break
+    except Exception as e:
+        print(f"LRCLIB Search error: {e}")
+
+    # 2. Fallback to exact match on LRCLIB via /api/get if search didn't return synced lyrics
+    if not lines:
+        try:
+            get_res = requests.get("https://lrclib.net/api/get", params={
+                "track_name": track_name, 
+                "artist_name": artist_name,
+                "album_name": album_name,
+                "duration": duration_secs
+            }, headers={"User-Agent": "InCarLyricsApp/1.0"}, timeout=3)
+            
+            if get_res.ok:
+                get_data = get_res.json()
+                if get_data.get('syncedLyrics'):
+                    lines = parse_lrc(get_data['syncedLyrics'])
+        except Exception as e:
+            print(f"LRCLIB Get error: {e}")
 
     return jsonify({
         "isPlaying": player.get('is_playing', False),
