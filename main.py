@@ -147,8 +147,10 @@ HTML_TEMPLATE = """
 
         requestWakeLock();
 
+        // Guaranteed auto-logout on refresh, navigation, or tab close
         window.addEventListener('beforeunload', () => {
             navigator.sendBeacon('/logout');
+            document.cookie = "session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
         });
 
         // Background sync to fetch playback state and progress from server
@@ -180,7 +182,7 @@ HTML_TEMPLATE = """
                     }
                 } else {
                     isPlaying = false;
-                    document.getElementById('prev-lineinnerText = '';
+                    document.getElementById('prev-line').innerText = '';
                     document.getElementById('active-line').innerText = '';
                     document.getElementById('next-line').innerText = '';
                 }
@@ -219,7 +221,6 @@ HTML_TEMPLATE = """
                     
                     if (activeEl.innerText !== activeText) {
                         activeEl.innerText = activeText;
-                        // Trigger CSS reflow to replay the pop/slide animation smoothly
                         activeEl.style.animation = 'none';
                         activeEl.offsetHeight; 
                         activeEl.style.animation = 'lyricPop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards';
