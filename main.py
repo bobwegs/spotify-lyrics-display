@@ -146,7 +146,7 @@ HTML_TEMPLATE = """
         <form action="/auth" method="POST" style="width: 100%; display: flex; flex-direction: column; gap: 16px; align-items: center;">
             <div class="pill-input" style="background: rgba(15, 15, 15, 0.6); color: #777; cursor: default; font-size: 12px;">{{ redirect_uri }}</div>
             <input type="text" name="client_id" class="pill-input" placeholder="client id" autocomplete="off" />
-            <input type="password" name="client_secret" class="pill-input" placeholder="client secret" autocomplete="off" />
+            <input type="text" name="client_secret" class="pill-input" placeholder="client secret" autocomplete="off" />
             <button type="submit" class="pill-button"></button>
         </form>
     </div>
