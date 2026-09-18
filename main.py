@@ -29,53 +29,58 @@ HTML_TEMPLATE = """
             width: 100vw;
             margin: 0; 
             overflow: hidden;
-            transition: background 2s cubic-bezier(0.16, 1, 0.3, 1); 
+            transition: background 2s cubic-bezier(0.25, 1, 0.5, 1); 
         }
-        .login-box { 
-            background: rgba(25, 25, 25, 0.8); 
-            backdrop-filter: blur(20px);
-            padding: 2.5rem 2rem; 
-            border-radius: 20px; 
-            text-align: center; 
+        .login-container { 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
             width: 90%; 
             max-width: 360px; 
-            box-shadow: 0 20px 50px rgba(0,0,0,0.7); 
-            border: 1px solid rgba(255,255,255,0.08);
-            animation: fadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            gap: 16px;
+            animation: fadeIn 0.8s cubic-bezier(0.25, 1, 0.5, 1) forwards;
         }
-        input { 
-            display: block; 
-            margin: 14px auto; 
-            padding: 14px 16px; 
-            width: 88%; 
-            border-radius: 10px; 
-            border: 1px solid rgba(255,255,255,0.08); 
-            font-size: 15px; 
-            background: rgba(15, 15, 15, 0.9); 
+        .pill-input { 
+            display: flex; 
+            align-items: center;
+            justify-content: center;
+            padding: 14px 18px; 
+            width: 100%; 
+            box-sizing: border-box;
+            border-radius: 14px; 
+            border: 1px solid rgba(255,255,255,0.1); 
+            font-size: 14px; 
+            background: rgba(20, 20, 20, 0.75); 
+            backdrop-filter: blur(15px);
             color: white;
-            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            transition: all 0.35s cubic-bezier(0.25, 1, 0.5, 1);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.4);
         }
-        input:focus {
+        input.pill-input {
             outline: none;
-            border-color: #1DB954;
-            box-shadow: 0 0 15px rgba(29, 185, 84, 0.3);
         }
-        button { 
+        .pill-input:hover {
+            border-color: #1DB954;
+            box-shadow: 0 0 20px rgba(29, 185, 84, 0.35);
+            transform: translateY(-2px);
+        }
+        button.pill-button { 
             background: #1DB954; 
             color: white; 
             border: none; 
             padding: 14px 20px; 
-            border-radius: 10px; 
+            border-radius: 14px; 
             cursor: pointer; 
-            width: 95%; 
-            height: 48px;
-            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-            box-shadow: 0 4px 20px rgba(29, 185, 84, 0.4);
+            width: 100%; 
+            height: 50px;
+            transition: all 0.35s cubic-bezier(0.25, 1, 0.5, 1);
+            box-shadow: 0 8px 25px rgba(29, 185, 84, 0.4);
         }
-        button:hover { 
-            transform: scale(1.02); 
+        button.pill-button:hover { 
+            transform: translateY(-2px) scale(1.02); 
             background: #1ed760;
-            box-shadow: 0 6px 25px rgba(29, 185, 84, 0.6);
+            box-shadow: 0 12px 30px rgba(29, 185, 84, 0.6);
         }
         
         #lyrics-container { 
@@ -88,7 +93,7 @@ HTML_TEMPLATE = """
             justify-content: center; 
             text-align: center;
             gap: 4vh;
-            animation: fadeIn 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            animation: fadeIn 1s cubic-bezier(0.25, 1, 0.5, 1) forwards;
         }
         
         .lyric-line { 
@@ -97,7 +102,7 @@ HTML_TEMPLATE = """
             overflow: visible;
             padding: 0 20px;
             transform-origin: center center;
-            transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1), filter 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+            transition: transform 0.45s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.5s cubic-bezier(0.25, 1, 0.5, 1), filter 0.5s cubic-bezier(0.25, 1, 0.5, 1);
         }
         
         .adjacent-line { 
@@ -113,7 +118,7 @@ HTML_TEMPLATE = """
             font-weight: 800;
             filter: blur(0px);
             text-shadow: 0 4px 30px rgba(0,0,0,0.6); 
-            animation: lyricPop 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            animation: lyricPop 0.5s cubic-bezier(0.25, 1, 0.5, 1) forwards;
         }
 
         @keyframes lyricPop {
@@ -132,12 +137,12 @@ HTML_TEMPLATE = """
 <body>
 
     {% if not is_authed %}
-    <div class="login-box">
-        <form action="/auth" method="POST">
-            <input type="text" value="{{ redirect_uri }}" readonly style="background: rgba(255,255,255,0.03); color: #777; cursor: default; font-size: 12px;" />
-            <input type="text" name="client_id" autocomplete="off" />
-            <input type="password" name="client_secret" autocomplete="off" />
-            <button type="submit"></button>
+    <div class="login-container">
+        <form action="/auth" method="POST" style="width: 100%; display: flex; flex-direction: column; gap: 16px; align-items: center;">
+            <div class="pill-input" style="background: rgba(15, 15, 15, 0.6); color: #888; cursor: default; font-size: 12px; text-align: center;">{{ redirect_uri }}</div>
+            <input type="text" name="client_id" class="pill-input" autocomplete="off" />
+            <input type="password" name="client_secret" class="pill-input" autocomplete="off" />
+            <button type="submit" class="pill-button"></button>
         </form>
     </div>
     {% else %}
@@ -213,7 +218,6 @@ HTML_TEMPLATE = """
                         parsedLines = data.lines || [];
                         lastActiveIndex = -1;
 
-                        // Instantly clear old lyrics when a new track starts
                         scaleText(document.getElementById('prev-line'), '');
                         scaleText(document.getElementById('active-line'), '');
                         scaleText(document.getElementById('next-line'), '');
@@ -223,9 +227,9 @@ HTML_TEMPLATE = """
                             img.onload = () => {
                                 try {
                                     const color = colorThief.getColor(img);
-                                    // Generate a rich, dark-ish version of the album color
+                                    // Robust luminance scaling for dark, rich ambient themes
                                     const maxC = Math.max(color[0], color[1], color[2], 1);
-                                    const scale = Math.min(1, 75 / maxC);
+                                    const scale = Math.min(1, 65 / maxC);
                                     const r = Math.floor(color[0] * scale);
                                     const g = Math.floor(color[1] * scale);
                                     const b = Math.floor(color[2] * scale);
@@ -277,7 +281,7 @@ HTML_TEMPLATE = """
                         scaleText(activeEl, activeText);
                         activeEl.style.animation = 'none';
                         activeEl.offsetHeight; 
-                        activeEl.style.animation = 'lyricPop 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards';
+                        activeEl.style.animation = 'lyricPop 0.5s cubic-bezier(0.25, 1, 0.5, 1) forwards';
                     }
 
                     scaleText(nextEl, nextText);
