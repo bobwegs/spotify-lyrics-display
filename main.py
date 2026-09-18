@@ -29,7 +29,7 @@ HTML_TEMPLATE = """
             width: 100vw;
             margin: 0; 
             overflow: hidden;
-            transition: background 1.5s ease; 
+            transition: background 1.5s cubic-bezier(0.4, 0, 0.2, 1); 
         }
         .login-box { 
             background: rgba(40, 40, 40, 0.9); 
@@ -44,7 +44,7 @@ HTML_TEMPLATE = """
         button { background: #1DB954; color: white; border: none; padding: 14px 20px; border-radius: 30px; font-weight: bold; cursor: pointer; width: 93%; font-size: 16px; transition: transform 0.2s;}
         button:hover { transform: scale(1.04); }
         
-        /* True center-locked 3-line fixed layout */
+        /* True center-locked 3-line fixed layout with smooth animations */
         #lyrics-container { 
             display: flex; 
             width: 90vw; 
@@ -54,29 +54,33 @@ HTML_TEMPLATE = """
             align-items: center; 
             justify-content: center; 
             text-align: center;
-            gap: 3vh;
+            gap: 3.5vh;
         }
         
         .lyric-line { 
             width: 100%;
-            transition: all 0.3s ease; 
             word-break: break-word;
             padding: 0 20px;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
         }
         
-        /* Adjacent (Previous/Next) lines: dimmed and responsive */
+        /* Adjacent (Previous/Next) lines: smooth fade and subtle scale */
         .adjacent-line { 
-            opacity: 0.4; 
+            opacity: 0.35; 
             font-size: clamp(18px, 3.5vw, 30px);
             font-weight: 600;
+            filter: blur(0.3px);
+            transform: scale(0.97);
         }
         
-        /* Active line: permanently dead-center, large and bright */
+        /* Active line: permanently dead-center, large, bright, and vibrant */
         .active-line { 
             opacity: 1; 
             font-size: clamp(26px, 5.5vw, 52px); 
             font-weight: 800;
-            text-shadow: 0 2px 20px rgba(0,0,0,0.4); 
+            filter: blur(0px);
+            transform: scale(1);
+            text-shadow: 0 4px 25px rgba(0,0,0,0.5); 
         }
         
         #album-art-hidden { display: none; }
@@ -100,7 +104,7 @@ HTML_TEMPLATE = """
     
     <div id="lyrics-container">
         <div id="prev-line" class="lyric-line adjacent-line"></div>
-        <div id="active-line" class="lyric-line active-line">Waiting for music...</div>
+        <div id="active-line" class="lyric-line active-line"></div>
         <div id="next-line" class="lyric-line adjacent-line"></div>
     </div>
 
@@ -108,25 +112,32 @@ HTML_TEMPLATE = """
         const colorThief = new ColorThief();
         let cachedTrackId = "";
         let parsedLines = [];
+        let wakeLock = null;
 
-        // Auto Wake Lock to keep the screen active while driving
+        // Robust Wake Lock implementation to keep screen alive
         async function requestWakeLock() {
             try {
                 if ('wakeLock' in navigator) {
-                    let wakeLock = await navigator.wakeLock.request('screen');
-                    document.addEventListener('visibilitychange', async () => {
-                        if (wakeLock !== null && document.visibilityState === 'visible') {
-                            wakeLock = await navigator.wakeLock.request('screen');
-                        }
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    wakeLock.addEventListener('release', () => {
+                        wakeLock = null;
                     });
                 }
             } catch (err) {
-                console.error(err);
+                console.error("Wake Lock error:", err);
             }
         }
+
+        // Re-acquire wake lock if page becomes visible again
+        document.addEventListener('visibilitychange', async () => {
+            if (wakeLock === null && document.visibilityState === 'visible') {
+                await requestWakeLock();
+            }
+        });
+
         requestWakeLock();
 
-        // Auto-disconnect instantly when closing tab or refreshing
+        // Guaranteed auto-logout on refresh, navigation, or tab close
         window.addEventListener('beforeunload', () => {
             navigator.sendBeacon('/logout');
         });
@@ -175,7 +186,7 @@ HTML_TEMPLATE = """
                     }
                 } else {
                     document.getElementById('prev-line').innerText = "";
-                    document.getElementById('active-line').innerText = "Waiting for music...";
+                    document.getElementById('active-line').innerText = "";
                     document.getElementById('next-line').innerText = "";
                 }
             } catch(e) {
