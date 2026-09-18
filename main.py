@@ -44,53 +44,49 @@ HTML_TEMPLATE = """
         button { background: #1DB954; color: white; border: none; padding: 14px 20px; border-radius: 30px; font-weight: bold; cursor: pointer; width: 93%; font-size: 16px; transition: transform 0.2s;}
         button:hover { transform: scale(1.04); }
         
-        /* Smooth sliding lyrics viewport */
-        #lyrics-viewport {
-            position: relative;
-            width: 90vw;
-            height: 100vh;
-            overflow: hidden;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        #lyrics-track {
-            position: absolute;
-            width: 100%;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
+        /* Fixed 3-line dead-center layout */
+        #lyrics-container { 
+            display: flex; 
+            width: 90vw; 
+            height: 100vh; 
+            position: relative; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
             text-align: center;
-            transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+            gap: 3.5vh;
         }
         
         .lyric-line { 
             width: 100%;
             word-break: break-word;
-            padding: 14px 20px;
-            transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1);
-            opacity: 0.25;
-            font-size: clamp(18px, 3.5vw, 28px);
+            padding: 0 20px;
+        }
+        
+        /* Adjacent (Previous/Next) lines: dimmed, smaller, blurred */
+        .adjacent-line { 
+            opacity: 0.35; 
+            font-size: clamp(18px, 3.5vw, 30px);
             font-weight: 600;
-            transform: scale(0.95);
-            filter: blur(0.5px);
+            filter: blur(0.3px);
+            transform: scale(0.97);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
         }
         
-        .lyric-line.adjacent-line { 
-            opacity: 0.5; 
-            font-size: clamp(20px, 4vw, 32px);
-            transform: scale(0.98);
-            filter: blur(0px);
-        }
-        
-        .lyric-line.active-line { 
+        /* Active line: dead-center, large, bright, animated */
+        .active-line { 
             opacity: 1; 
-            font-size: clamp(26px, 5.5vw, 48px); 
+            font-size: clamp(26px, 5.5vw, 52px); 
             font-weight: 800;
-            transform: scale(1);
             filter: blur(0px);
+            transform: scale(1);
             text-shadow: 0 4px 25px rgba(0,0,0,0.5); 
+            animation: lyricPop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        @keyframes lyricPop {
+            0% { transform: scale(0.92); opacity: 0.4; }
+            100% { transform: scale(1); opacity: 1; }
         }
         
         #album-art-hidden { display: none; }
@@ -112,8 +108,10 @@ HTML_TEMPLATE = """
     {% else %}
     <img id="album-art-hidden" crossorigin="anonymous" />
     
-    <div id="lyrics-viewport">
-        <div id="lyrics-track"></div>
+    <div id="lyrics-container">
+        <div id="prev-line" class="lyric-line adjacent-line"></div>
+        <div id="active-line" class="lyric-line active-line"></div>
+        <div id="next-line" class="lyric-line adjacent-line"></div>
     </div>
 
     <script>
@@ -168,13 +166,6 @@ HTML_TEMPLATE = """
                         cachedTrackId = data.trackId;
                         parsedLines = data.lines || [];
                         lastActiveIndex = -1;
-                        
-                        const trackEl = document.getElementById('lyrics-track');
-                        if (parsedLines.length > 0) {
-                            trackEl.innerHTML = parsedLines.map((l, i) => `<div class="lyric-line" data-index="${i}">${l.words}</div>`).join('');
-                        } else {
-                            trackEl.innerHTML = `<div class="lyric-line active-line" data-index="0">♪ ${data.title} ♪</div>`;
-                        }
 
                         if (data.albumArt) {
                             const img = document.getElementById('album-art-hidden');
@@ -189,8 +180,9 @@ HTML_TEMPLATE = """
                     }
                 } else {
                     isPlaying = false;
-                    const trackEl = document.getElementById('lyrics-track');
-                    if (trackEl) trackEl.innerHTML = '';
+                    document.getElementById('prev-lineinnerText = '';
+                    document.getElementById('active-line').innerText = '';
+                    document.getElementById('next-line').innerText = '';
                 }
             } catch(e) {
                 console.error(e);
@@ -200,7 +192,7 @@ HTML_TEMPLATE = """
         setInterval(pollServer, 2000);
         pollServer();
 
-        // 60FPS animation loop for instant, buttery-smooth line transitions and sliding
+        // 60FPS animation loop for instant, buttery-smooth line tracking and transitions
         function animationLoop() {
             if (isPlaying && parsedLines.length > 0) {
                 const currentProgress = serverProgress + (performance.now() - serverTimestamp);
@@ -214,30 +206,26 @@ HTML_TEMPLATE = """
 
                 if (activeIndex !== lastActiveIndex) {
                     lastActiveIndex = activeIndex;
-                    const trackEl = document.getElementById('lyrics-track');
-                    const viewport = document.getElementById('lyrics-viewport');
 
-                    if (trackEl && viewport) {
-                        const lineElements = trackEl.getElementsByClassName('lyric-line');
-                        
-                        for (let i = 0; i < lineElements.length; i++) {
-                            lineElements[i].className = 'lyric-line';
-                            if (i === activeIndex) {
-                                lineElements[i].classList.add('active-line');
-                            } else if (i === activeIndex - 1 || i === activeIndex + 1) {
-                                lineElements[i].classList.add('adjacent-line');
-                            }
-                        }
+                    const prevEl = document.getElementById('prev-line');
+                    const activeEl = document.getElementById('active-line');
+                    const nextEl = document.getElementById('next-line');
 
-                        const activeElem = lineElements[activeIndex];
-                        if (activeElem) {
-                            const viewportHeight = viewport.clientHeight;
-                            const elementTop = activeElem.offsetTop;
-                            const elementHeight = activeElem.clientHeight;
-                            const translateY = (viewportHeight / 2) - elementTop - (elementHeight / 2);
-                            trackEl.style.transform = `translateY(${translateY}px)`;
-                        }
+                    const prevText = activeIndex > 0 ? parsedLines[activeIndex - 1].words : "";
+                    const activeText = activeIndex >= 0 ? parsedLines[activeIndex].words : "";
+                    const nextText = activeIndex + 1 < parsedLines.length ? parsedLines[activeIndex + 1].words : "";
+
+                    if (prevEl.innerText !== prevText) prevEl.innerText = prevText;
+                    
+                    if (activeEl.innerText !== activeText) {
+                        activeEl.innerText = activeText;
+                        // Trigger CSS reflow to replay the pop/slide animation smoothly
+                        activeEl.style.animation = 'none';
+                        activeEl.offsetHeight; 
+                        activeEl.style.animation = 'lyricPop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards';
                     }
+
+                    if (nextEl.innerText !== nextText) nextEl.innerText = nextText;
                 }
             }
             requestAnimationFrame(animationLoop);
