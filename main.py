@@ -29,7 +29,7 @@ HTML_TEMPLATE = """
             width: 100vw;
             margin: 0; 
             overflow: hidden;
-            transition: background 2.2s cubic-bezier(0.16, 1, 0.3, 1); 
+            transition: background 2.5s cubic-bezier(0.16, 1, 0.3, 1); 
         }
         .login-container { 
             display: flex;
@@ -88,47 +88,48 @@ HTML_TEMPLATE = """
             box-shadow: 0 12px 30px rgba(29, 185, 84, 0.6);
         }
         
-        #lyrics-container { 
-            display: flex; 
-            width: 90vw; 
+        #lyrics-viewport { 
+            width: 100vw; 
             height: 100vh; 
             position: relative; 
-            flex-direction: column; 
-            align-items: center; 
-            justify-content: center; 
-            text-align: center;
-            gap: 4vh;
-            animation: fadeIn 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
-        
-        .lyric-line { 
-            width: 100%;
-            white-space: nowrap;
-            overflow: visible;
-            padding: 0 20px;
-            transform-origin: center center;
-            transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1), filter 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-        }
-        
-        .adjacent-line { 
-            opacity: 0.25; 
-            font-size: clamp(16px, 3.2vw, 26px);
-            font-weight: 500;
-            filter: blur(0.6px);
-        }
-        
-        .active-line { 
-            opacity: 1; 
-            font-size: clamp(24px, 5.2vw, 48px); 
-            font-weight: 800;
-            filter: blur(0px);
-            text-shadow: 0 4px 35px rgba(0,0,0,0.65); 
-            animation: lyricPop 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
-        @keyframes lyricPop {
-            0% { transform: scale(0.90); opacity: 0.2; filter: blur(3px); }
-            100% { transform: scale(1); opacity: 1; filter: blur(0px); }
+        #lyrics-track { 
+            position: absolute;
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            text-align: center;
+            gap: 5vh;
+            width: 90vw;
+            will-change: transform;
+            transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        
+        .lyric-item { 
+            width: 100%;
+            white-space: nowrap;
+            padding: 0 20px;
+            font-size: clamp(18px, 3.5vw, 28px);
+            font-weight: 500;
+            opacity: 0.25;
+            filter: blur(0.6px);
+            transform: scale(0.95);
+            transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+            will-change: transform, opacity, filter, font-size;
+        }
+        
+        .lyric-item.active { 
+            opacity: 1; 
+            font-size: clamp(26px, 5.5vW, 50px); 
+            font-weight: 800;
+            filter: blur(0px);
+            transform: scale(1);
+            text-shadow: 0 4px 35px rgba(0,0,0,0.65); 
         }
 
         @keyframes fadeIn {
@@ -153,10 +154,8 @@ HTML_TEMPLATE = """
     {% else %}
     <img id="album-art-hidden" crossorigin="anonymous" />
     
-    <div id="lyrics-container">
-        <div id="prev-line" class="lyric-line adjacent-line"></div>
-        <div id="active-line" class="lyric-line active-line"></div>
-        <div id="next-line" class="lyric-line adjacent-line"></div>
+    <div id="lyrics-viewport">
+        <div id="lyrics-track"></div>
     </div>
 
     <script>
@@ -195,17 +194,16 @@ HTML_TEMPLATE = """
             navigator.sendBeacon('/logout');
         });
 
-        function scaleText(el, text) {
-            el.innerText = text;
-            el.style.transform = 'none';
-            const containerWidth = el.clientWidth - 40;
-            const textWidth = el.scrollWidth;
-            if (textWidth > containerWidth && containerWidth > 0) {
-                const scaleFactor = containerWidth / textWidth;
-                el.style.transform = `scale(${scaleFactor})`;
-            } else {
-                el.style.transform = 'scale(1)';
-            }
+        function buildLyricsTrack(lines) {
+            const track = document.getElementById('lyrics-track');
+            track.innerHTML = '';
+            if (!lines || lines.length === 0) return;
+            lines.forEach((line) => {
+                const item = document.createElement('div');
+                item.className = 'lyric-item';
+                item.innerText = line.words;
+                track.appendChild(item);
+            });
         }
 
         async function pollServer() {
@@ -223,9 +221,7 @@ HTML_TEMPLATE = """
                         parsedLines = data.lines || [];
                         lastActiveIndex = -1;
 
-                        scaleText(document.getElementById('prev-line'), '');
-                        scaleText(document.getElementById('active-line'), '');
-                        scaleText(document.getElementById('next-line'), '');
+                        buildLyricsTrack(parsedLines);
 
                         if (data.albumArt) {
                             const img = document.getElementById('album-art-hidden');
@@ -245,16 +241,14 @@ HTML_TEMPLATE = """
                     }
                 } else {
                     isPlaying = false;
-                    scaleText(document.getElementById('prev-line'), '');
-                    scaleText(document.getElementById('active-line'), '');
-                    scaleText(document.getElementById('next-line'), '');
+                    buildLyricsTrack([]);
                 }
             } catch(e) {
                 console.error(e);
             }
         }
 
-        setInterval(pollServer, 2000);
+        setInterval(pollServer, 1000);
         pollServer();
 
         function animationLoop() {
@@ -271,29 +265,30 @@ HTML_TEMPLATE = """
                 if (activeIndex !== lastActiveIndex) {
                     lastActiveIndex = activeIndex;
 
-                    const prevEl = document.getElementById('prev-line');
-                    const activeEl = document.getElementById('active-line');
-                    const nextEl = document.getElementById('next-line');
+                    const items = document.querySelectorAll('.lyric-item');
+                    items.forEach((item, idx) => {
+                        if (idx === activeIndex) {
+                            item.classList.add('active');
+                        } else {
+                            item.classList.remove('active');
+                        }
+                    });
 
-                    const prevText = activeIndex > 0 ? parsedLines[activeIndex - 1].words : "";
-                    const activeText = activeIndex >= 0 ? parsedLines[activeIndex].words : "";
-                    const nextText = activeIndex + 1 < parsedLines.length ? parsedLines[activeIndex + 1].words : "";
-
-                    scaleText(prevEl, prevText);
-                    
-                    if (activeEl.innerText !== activeText) {
-                        scaleText(activeEl, activeText);
-                        activeEl.style.animation = 'none';
-                        activeEl.offsetHeight; 
-                        activeEl.style.animation = 'lyricPop 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards';
+                    if (activeIndex >= 0 && items[activeIndex]) {
+                        const track = document.getElementById('lyrics-track');
+                        const activeEl = items[activeIndex];
+                        const viewportHeight = window.innerHeight;
+                        const offsetTop = activeEl.offsetTop;
+                        const offsetHeight = activeEl.offsetHeight;
+                        const targetY = (viewportHeight / 2) - (offsetTop + offsetHeight / 2);
+                        track.style.transform = `translateY(${targetY}px)`;
                     }
-
-                    scaleText(nextEl, nextText);
                 }
             } else {
-                scaleText(document.getElementById('prev-line'), '');
-                scaleText(document.getElementById('active-line'), '');
-                scaleText(document.getElementById('next-line'), '');
+                const track = document.getElementById('lyrics-track');
+                if (track.innerHTML !== '') {
+                    buildLyricsTrack([]);
+                }
             }
             requestAnimationFrame(animationLoop);
         }
