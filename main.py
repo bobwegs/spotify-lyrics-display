@@ -121,7 +121,7 @@ HTML_TEMPLATE = """
             background: #1ed760;
             box-shadow: 0 12px 30px rgba(29, 185, 84, 0.6);
         }
-        
+
         #lyrics-container { 
             display: flex; 
             width: 90vw; 
@@ -136,7 +136,6 @@ HTML_TEMPLATE = """
             animation: fadeIn 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
         
-        /* The outer container handles auto-scaling to prevent wrapping */
         .lyric-line { 
             width: 100%;
             display: flex;
@@ -145,7 +144,6 @@ HTML_TEMPLATE = """
             transition: transform 0.4s ease; 
         }
         
-        /* The inner container handles the beautiful pop animations independently */
         .lyric-inner {
             white-space: nowrap;
             padding: 0 20px;
@@ -167,17 +165,13 @@ HTML_TEMPLATE = """
             text-shadow: 0 4px 35px rgba(0,0,0,0.65); 
         }
 
-        /* Silky smooth text crossfade and reveal animations */
-        @keyframes fadeOutUp {
-            0% { transform: translateY(0); opacity: 1; filter: blur(0px); }
-            100% { transform: translateY(-15px); opacity: 0; filter: blur(4px); }
-        }
-        @keyframes swapActive {
+        /* Seamless liquid glide animations triggered on text change */
+        @keyframes lyricPop {
             0% { transform: translateY(15px) scale(0.95); opacity: 0; filter: blur(5px); }
             100% { transform: translateY(0) scale(1); opacity: 1; filter: blur(0px); }
         }
-        @keyframes swapAdjacent {
-            0% { transform: translateY(10px); opacity: 0; filter: blur(4px); }
+        @keyframes lyricFade {
+            0% { transform: translateY(10px); opacity: 0; filter: blur(3px); }
             100% { transform: translateY(0); opacity: 0.3; filter: blur(1.5px); }
         }
 
@@ -232,9 +226,7 @@ HTML_TEMPLATE = """
                     wakeLock = await navigator.wakeLock.request('screen');
                     wakeLock.addEventListener('release', () => { wakeLock = null; });
                 }
-            } catch (err) {
-                console.error("Wake Lock error:", err);
-            }
+            } catch (err) {}
         }
 
         document.addEventListener('visibilitychange', async () => {
@@ -249,51 +241,35 @@ HTML_TEMPLATE = """
             navigator.sendBeacon('/logout');
         });
 
-        // Split-engine updating function: Seamless crossfades with zero teleportation glitches
         function updateLine(elId, text, isActive) {
             const el = document.getElementById(elId);
             const inner = el.querySelector('.lyric-inner');
             
-            if (inner.dataset.currentText !== text) {
-                inner.dataset.currentText = text;
-                
-                // Track animation sequence to prevent overlaps
-                let seq = (parseInt(inner.dataset.seq) || 0) + 1;
-                inner.dataset.seq = seq;
+            if (inner.innerText !== text) {
+                // Remove animation, trigger reflow, and swap text
+                inner.style.animation = 'none';
+                void inner.offsetWidth; 
+                inner.innerText = text;
 
-                // 1. Smoothly fade out the old text upward
-                if (inner.innerText.trim() !== "") {
-                    inner.style.animation = 'fadeOutUp 0.25s cubic-bezier(0.25, 1, 0.5, 1) forwards';
+                // Dynamically auto-scale outer container to prevent text wrapping
+                el.style.transform = 'none';
+                const containerWidth = el.clientWidth - 40;
+                const textWidth = inner.scrollWidth;
+                if (textWidth > containerWidth && containerWidth > 0) {
+                    const scaleFactor = containerWidth / textWidth;
+                    el.style.transform = `scale(${scaleFactor})`;
+                } else {
+                    el.style.transform = 'scale(1)';
                 }
 
-                // 2. Wait exactly 250ms (matching our look-ahead offset) before swapping the new text in
-                setTimeout(() => {
-                    if (parseInt(inner.dataset.seq) !== seq) return;
-                    
-                    inner.innerText = text;
-
-                    // Dynamically auto-scale outer container to prevent wrapping
-                    el.style.transform = 'none';
-                    const containerWidth = el.clientWidth - 40;
-                    const textWidth = inner.scrollWidth;
-                    if (textWidth > containerWidth && containerWidth > 0) {
-                        const scaleFactor = containerWidth / textWidth;
-                        el.style.transform = `scale(${scaleFactor})`;
+                // Immediately trigger liquid pop/fade animation
+                if (text.trim() !== "") {
+                    if (isActive) {
+                        inner.style.animation = 'lyricPop 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards';
                     } else {
-                        el.style.transform = 'scale(1)';
+                        inner.style.animation = 'lyricFade 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards';
                     }
-
-                    // Glide in the new text exactly on beat
-                    if (text.trim() !== "") {
-                        if (isActive) {
-                            inner.style.animation = 'swapActive 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards';
-                        } else {
-                            inner.style.animation = 'swapAdjacent 0.5s cubic-bezier(0.25, 1, 0.5, 1) forwards';
-                        }
-                    } else {
-                        inner.style.animation = 'none';
-                    }
-                }, 250);
+                }
             }
         }
 
@@ -304,7 +280,7 @@ HTML_TEMPLATE = """
                 const data = await res.json();
                 const fetchEnd = performance.now();
                 
-                // Calculate network latency to keep the local clock perfectly aligned
+                // Calculate exact network latency to align the visual clock perfectly
                 const networkLatency = (fetchEnd - fetchStart) / 2;
                 
                 if (data.isPlaying) {
@@ -343,12 +319,10 @@ HTML_TEMPLATE = """
                     updateLine('active-line', '', true);
                     updateLine('next-line', '', false);
                 }
-            } catch(e) {
-                console.error(e);
-            }
+            } catch(e) {}
         }
 
-        // Tighter polling (750ms) to ensure playback stays ruthlessly synced
+        // Tighter polling interval limits drift and keeps everything ruthlessly synced
         setInterval(pollServer, 750);
         pollServer();
 
@@ -358,9 +332,8 @@ HTML_TEMPLATE = """
 
                 let activeIndex = -1;
                 for (let i = 0; i < parsedLines.length; i++) {
-                    // +250ms look-ahead: Triggers the crossfade exactly 250ms early, 
-                    // so the new lyric pops into place precisely as the word is sung.
-                    if (parsedLines[i].startTimeMs <= currentProgress + 250) {
+                    // Triggers exactly on the millisecond timestamp—zero artificial delay
+                    if (parsedLines[i].startTimeMs <= currentProgress) {
                         activeIndex = i;
                     }
                 }
@@ -385,6 +358,7 @@ HTML_TEMPLATE = """
         }
         requestAnimationFrame(animationLoop);
     </script>
+    {% endif %}
 </body>
 </html>
 """
@@ -528,7 +502,7 @@ def now_playing():
     
     lines = []
     
-    # 1. Clean track name to massively improve LRCLIB fallback search accuracy
+    # 1. Clean track name properly to massively improve LRCLIB fallback search accuracy without crashing
     cleaned_name = re.sub(r'\s*[\(\[].*?(feat\.\vert{}ft\.\vert{}remaster\vert{}version\vert{}mix).*?[\)\]]', '', track_name, flags=re.IGNORECASE)
     cleaned_name = re.sub(r'\s*-.*?(Remaster|Live|Mono|Stereo).*', '', cleaned_name, flags=re.IGNORECASE).strip()
     
