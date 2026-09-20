@@ -172,15 +172,111 @@ HTML_TEMPLATE = """
             position: absolute;
             bottom: max(24px, env(safe-area-inset-bottom));
             display: flex;
-            gap: 30px;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
             z-index: 20;
             background: rgba(0, 0, 0, 0.3);
-            padding: 12px 30px;
+            padding: 20px 30px 12px;
             border-radius: 40px;
             backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.1);
+            width: min(420px, 82vw);
+            box-sizing: border-box;
+        }
+
+        /* Progress bar sits right along the top edge of the pill, curving
+           with it, so it reads as part of the pill's border rather than a
+           separate element floating inside it. */
+        #progress-track {
+            position: absolute;
+            top: 0;
+            left: 14px;
+            right: 14px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            touch-action: none;
+            z-index: 21;
+        }
+
+        #progress-track::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 50%;
+            height: 3px;
+            transform: translateY(-50%);
+            background: rgba(255, 255, 255, 0.22);
+            border-radius: 3px;
+        }
+
+        #progress-fill {
+            position: absolute;
+            left: 0;
+            top: 50%;
+            height: 3px;
+            transform: translateY(-50%);
+            width: 0%;
+            background: #1DB954;
+            border-radius: 3px;
+            transition: width 0.1s linear;
+        }
+
+        #progress-track.seeking #progress-fill,
+        #progress-track.seeking #progress-thumb {
+            transition: none;
+        }
+
+        #progress-thumb {
+            position: absolute;
+            top: 50%;
+            left: 0%;
+            width: 11px;
+            height: 11px;
+            border-radius: 50%;
+            background: #fff;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+            transition: left 0.1s linear, opacity 0.15s ease;
+            opacity: 0;
+        }
+
+        #controls-bar:hover #progress-thumb,
+        #progress-track.seeking #progress-thumb {
+            opacity: 1;
+        }
+
+        #now-playing-title {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            padding: 0 4px;
+            margin-bottom: 6px;
+            height: 18px;
+        }
+
+        #now-playing-title-inner {
+            color: rgba(255, 255, 255, 0.85);
+            font-weight: 700;
+            white-space: nowrap;
+            letter-spacing: 0.2px;
+            line-height: 1;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: inline-block;
+        }
+
+        #controls-row {
+            display: flex;
+            gap: 30px;
+            align-items: center;
+            justify-content: center;
         }
 
         .control-btn {
@@ -259,15 +355,22 @@ HTML_TEMPLATE = """
 
     <!-- Playback Controls -->
     <div id="controls-bar">
-        <button class="control-btn" onclick="sendControl('previous')">
-            <svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
-        </button>
-        <button class="control-btn" onclick="togglePlayPause()">
-            <svg viewBox="0 0 24 24" id="play-pause-icon"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
-        </button>
-        <button class="control-btn" onclick="sendControl('next')">
-            <svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
-        </button>
+        <div id="progress-track">
+            <div id="progress-fill"></div>
+            <div id="progress-thumb"></div>
+        </div>
+        <div id="now-playing-title"><span id="now-playing-title-inner"></span></div>
+        <div id="controls-row">
+            <button class="control-btn" onclick="sendControl('previous')">
+                <svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+            </button>
+            <button class="control-btn" onclick="togglePlayPause()">
+                <svg viewBox="0 0 24 24" id="play-pause-icon"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+            </button>
+            <button class="control-btn" onclick="sendControl('next')">
+                <svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+            </button>
+        </div>
     </div>
 
     <script>
@@ -283,6 +386,9 @@ HTML_TEMPLATE = """
         let serverTimestamp = 0;
         let isPlaying = false;
         let lastActiveIndex = -2;
+        let trackDurationMs = 0;
+        let isSeeking = false;
+        let seekPositionMs = 0;
 
         // ---------- Opacity targets per slot ----------
         const OPACITY_ACTIVE = 1;
@@ -501,13 +607,115 @@ HTML_TEMPLATE = """
         let resizeTimer = null;
         function scheduleRefit() {
             clearTimeout(resizeTimer);
-            resizeTimer = setTimeout(refitCurrentLines, 120);
+            resizeTimer = setTimeout(() => { refitCurrentLines(); fitTitle(); }, 120);
             // Mobile browsers can report stale dimensions right after a
             // rotation event, so double-check shortly after too.
-            setTimeout(refitCurrentLines, 400);
+            setTimeout(() => { refitCurrentLines(); fitTitle(); }, 400);
         }
         window.addEventListener('resize', scheduleRefit);
         window.addEventListener('orientationchange', scheduleRefit);
+
+        // ---------- Now-playing title: always sized to fit the pill ----------
+        // Same idea as the lyric auto-fit: measure the text once at a
+        // reference size and scale down to the exact width available,
+        // never wrapping and never overflowing the pill.
+        const titleEl = document.getElementById('now-playing-title');
+        const titleInnerEl = document.getElementById('now-playing-title-inner');
+        const TITLE_MAX = 15, TITLE_MIN = 7;
+        let currentTitleText = '';
+
+        function computeTitleFontSize(text) {
+            if (!text) return TITLE_MAX;
+            measureCtx.font = `700 ${REF_SIZE}px 'Montserrat', sans-serif`;
+            const refWidth = measureCtx.measureText(text).width || 1;
+            const maxWidth = titleEl.clientWidth * 0.98;
+            let size = (maxWidth / refWidth) * REF_SIZE;
+            size = Math.min(size, TITLE_MAX);
+            size = Math.max(size, TITLE_MIN);
+            return Math.round(size * 10) / 10;
+        }
+
+        function fitTitle() {
+            if (!currentTitleText) return;
+            titleInnerEl.style.fontSize = computeTitleFontSize(currentTitleText) + 'px';
+        }
+
+        function setTitle(title, artist) {
+            const text = artist ? `${title} — ${artist}` : title;
+            if (text === currentTitleText) return;
+            currentTitleText = text;
+            titleInnerEl.textContent = text;
+            titleInnerEl.style.fontSize = computeTitleFontSize(text) + 'px';
+        }
+
+        // ---------- Progress bar / seek ----------
+        // A thin bar running along the top edge of the controls pill.
+        // Dragging (or a single click/tap) anywhere on it seeks to that
+        // point in the track. While the server round trip for the seek is
+        // in flight, the bar is driven purely from the local drag position
+        // so it never jumps or lags behind the finger/cursor.
+        const progressTrack = document.getElementById('progress-track');
+        const progressFill = document.getElementById('progress-fill');
+        const progressThumb = document.getElementById('progress-thumb');
+
+        function setProgressVisual(ratio) {
+            const pct = Math.min(100, Math.max(0, ratio * 100));
+            progressFill.style.width = pct + '%';
+            progressThumb.style.left = pct + '%';
+        }
+
+        function ratioFromEvent(e) {
+            const rect = progressTrack.getBoundingClientRect();
+            const clientX = e.touches && e.touches.length ? e.touches[0].clientX : e.clientX;
+            const x = clientX - rect.left;
+            return Math.min(1, Math.max(0, rect.width > 0 ? x / rect.width : 0));
+        }
+
+        function updateSeekFromEvent(e) {
+            if (!trackDurationMs) return;
+            const ratio = ratioFromEvent(e);
+            setProgressVisual(ratio);
+            seekPositionMs = Math.round(ratio * trackDurationMs);
+        }
+
+        function startSeek(e) {
+            if (!trackDurationMs) return;
+            isSeeking = true;
+            progressTrack.classList.add('seeking');
+            updateSeekFromEvent(e);
+            e.preventDefault();
+        }
+
+        function endSeek() {
+            if (!isSeeking) return;
+            isSeeking = false;
+            progressTrack.classList.remove('seeking');
+            serverProgress = seekPositionMs;
+            serverTimestamp = performance.now();
+            sendSeek(seekPositionMs);
+        }
+
+        async function sendSeek(positionMs) {
+            requestWakeLock();
+            try {
+                await fetch('/api/control', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'seek', positionMs: positionMs })
+                });
+            } catch (e) {
+                // ignore - next poll will resync to real server position
+            }
+            pollServer(true);
+        }
+
+        progressTrack.addEventListener('mousedown', startSeek);
+        progressTrack.addEventListener('touchstart', startSeek, { passive: false });
+        window.addEventListener('mousemove', (e) => { if (isSeeking) updateSeekFromEvent(e); });
+        window.addEventListener('touchmove', (e) => { if (isSeeking) { updateSeekFromEvent(e); e.preventDefault(); } }, { passive: false });
+        window.addEventListener('mouseup', endSeek);
+        window.addEventListener('touchend', endSeek);
+        window.addEventListener('touchcancel', endSeek);
 
         // ---------- Polling (guarded against overlap / out-of-order) ----------
         let pollInFlight = false;
@@ -548,9 +756,13 @@ HTML_TEMPLATE = """
 
                 if (effectiveIsPlaying && data.trackId) {
                     isPlaying = true;
-                    serverProgress = data.progressMs;
-                    serverTimestamp = performance.now() - networkLatency;
+                    if (!isSeeking) {
+                        serverProgress = data.progressMs;
+                        serverTimestamp = performance.now() - networkLatency;
+                    }
+                    trackDurationMs = data.durationMs || 0;
                     updatePlayPauseIcon();
+                    setTitle(data.title, data.artist);
 
                     if (cachedTrackId !== data.trackId) {
                         cachedTrackId = data.trackId;
@@ -583,7 +795,14 @@ HTML_TEMPLATE = """
                     // Spotify's own lyrics view behaves on pause) instead
                     // of blanking the screen.
                     isPlaying = false;
+                    if (!isSeeking) {
+                        serverProgress = data.progressMs;
+                        serverTimestamp = performance.now() - networkLatency;
+                    }
+                    trackDurationMs = data.durationMs || 0;
                     updatePlayPauseIcon();
+                    setTitle(data.title, data.artist);
+                    cachedTrackId = data.trackId;
                 } else {
                     // Nothing loaded at all.
                     isPlaying = false;
@@ -591,6 +810,10 @@ HTML_TEMPLATE = """
                     applyLines('', '', '');
                     lastActiveIndex = -1;
                     cachedTrackId = "";
+                    trackDurationMs = 0;
+                    currentTitleText = '';
+                    titleInnerEl.textContent = '';
+                    if (!isSeeking) setProgressVisual(0);
                 }
             } catch (e) {
                 // Network hiccup: count misses, and if we've been stuck for a
@@ -608,9 +831,18 @@ HTML_TEMPLATE = """
         pollServer(true);
 
         function animationLoop() {
-            if (isPlaying && parsedLines.length > 0) {
-                const currentProgress = serverProgress + (performance.now() - serverTimestamp);
+            const currentProgress = isPlaying
+                ? serverProgress + (performance.now() - serverTimestamp)
+                : serverProgress;
 
+            // Drive the progress bar every frame for a perfectly smooth
+            // sweep, except while the user is actively dragging it - then
+            // their own touch/drag position is the source of truth.
+            if (!isSeeking && trackDurationMs > 0) {
+                setProgressVisual(currentProgress / trackDurationMs);
+            }
+
+            if (isPlaying && parsedLines.length > 0) {
                 let activeIndex = -1;
                 for (let i = 0; i < parsedLines.length; i++) {
                     if (parsedLines[i].startTimeMs <= currentProgress) {
@@ -630,8 +862,9 @@ HTML_TEMPLATE = """
                     applyLines(prevText, activeText, nextText);
                 }
             }
-            // When paused, intentionally do nothing here: the lyric lines
-            // stay exactly as they were, frozen, rather than disappearing.
+            // When paused, intentionally do nothing else here: the lyric
+            // lines stay exactly as they were, frozen, rather than
+            // disappearing.
             requestAnimationFrame(animationLoop);
         }
         requestAnimationFrame(animationLoop);
@@ -907,6 +1140,22 @@ def control():
             if res.status_code in (200, 202, 204):
                 return jsonify({"success": True})
             return jsonify({"success": False, "error": f"spotify_{res.status_code}"})
+
+        elif action == 'seek':
+            position_ms = payload.get('positionMs')
+            try:
+                position_ms = max(0, int(position_ms))
+            except (TypeError, ValueError):
+                return jsonify({"success": False, "error": "bad_position"})
+            res = requests.put(
+                "https://api.spotify.com/v1/me/player/seek",
+                params={"position_ms": position_ms},
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=5
+            )
+            if res.status_code in (200, 202, 204):
+                return jsonify({"success": True})
+            return jsonify({"success": False, "error": f"spotify_{res.status_code}"})
     except Exception as e:
         return jsonify({"success": False, "error": "network_error"})
 
@@ -949,10 +1198,12 @@ def now_playing():
     album_art = images[0].get('url', '') if images and isinstance(images[0], dict) else ""
 
     lines = fetch_synced_lyrics(track_name, artist_name)
+    duration_ms = item.get('duration_ms') or 0
 
     return jsonify({
         "isPlaying": player.get('is_playing', False),
         "progressMs": player.get('progress_ms', 0),
+        "durationMs": duration_ms,
         "title": track_name,
         "artist": artist_name,
         "albumArt": album_art,
