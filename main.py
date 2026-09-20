@@ -332,65 +332,117 @@ HTML_TEMPLATE = """
                 : '<path d="M8 5v14l11-7z"/>';
         }
 
-        // ---------- Smooth crossfade text swap ----------
-        const lineEls = {
-            'prev-line': { el: document.getElementById('prev-line'), opacity: OPACITY_ADJACENT },
-            'active-line': { el: document.getElementById('active-line'), opacity: OPACITY_ACTIVE },
-            'next-line': { el: document.getElementById('next-line'), opacity: OPACITY_ADJACENT }
+        // ---------- Auto-fit sizing ----------
+        // Sizes are computed synchronously from (text, container width) using
+        // an offscreen canvas measurement - no live-DOM binary search, no
+        // reflow loop, no dependency on transition/opacity state. Same text
+        // always yields the same size, so there is no race where a line
+        // briefly renders at the wrong size mid-transition.
+        const containerEl = document.getElementById('lyrics-container');
+        const ACTIVE_MAX = 100, ACTIVE_MIN = 22;
+        const ADJACENT_MAX = 40, ADJACENT_MIN = 14;
+        const ACTIVE_WEIGHT = 900, ADJACENT_WEIGHT = 600;
+        const REF_SIZE = 100;
+
+        const measureCanvas = document.createElement('canvas');
+        const measureCtx = measureCanvas.getContext('2d');
+        if (document.fonts && document.fonts.ready) {
+            document.fonts.ready.then(() => { refitCurrentLines(); });
+        }
+
+        function measureWidthAtRef(text, weight) {
+            measureCtx.font = `${weight} ${REF_SIZE}px 'Montserrat', sans-serif`;
+            return measureCtx.measureText(text).width || 1;
+        }
+
+        function computeFontSize(text, isActive) {
+            const maxSize = isActive ? ACTIVE_MAX : ADJACENT_MAX;
+            const minSize = isActive ? ACTIVE_MIN : ADJACENT_MIN;
+            if (!text) return maxSize;
+
+            const weight = isActive ? ACTIVE_WEIGHT : ADJACENT_WEIGHT;
+            const maxWidth = containerEl.clientWidth * 0.94;
+            // Longer lines are allowed to wrap to two physical lines, so give
+            // width-based sizing a little headroom instead of forcing every
+            // line onto one row at a tiny size.
+            const wrapAllowance = text.length > 24 ? 1.55 : 1;
+
+            const refWidth = measureWidthAtRef(text, weight);
+            let size = (maxWidth * wrapAllowance / refWidth) * REF_SIZE;
+
+            // Cap by available height too (roughly, assuming up to 2 wrapped
+            // lines at this font size).
+            const maxHeight = containerEl.clientHeight * (isActive ? 0.46 : 0.22);
+            const lines = wrapAllowance > 1 ? 2 : 1;
+            const heightCap = maxHeight / (lines * 1.25);
+            size = Math.min(size, heightCap);
+
+            size = Math.min(size, maxSize);
+            size = Math.max(size, minSize);
+            return Math.round(size);
+        }
+
+        // ---------- Coordinated crossfade text swap ----------
+        // All three slots are computed together before anything is touched,
+        // so prev/active/next never briefly show mismatched sizes.
+        const FADE_MS = 160;
+        const slots = {
+            'prev-line': { inner: document.querySelector('#prev-line .lyric-inner'), opacity: OPACITY_ADJACENT, isActive: false },
+            'active-line': { inner: document.querySelector('#active-line .lyric-inner'), opacity: OPACITY_ACTIVE, isActive: true },
+            'next-line': { inner: document.querySelector('#next-line .lyric-inner'), opacity: OPACITY_ADJACENT, isActive: false }
         };
 
-        function setLineText(key, text) {
-            const cfg = lineEls[key];
-            const inner = cfg.el.querySelector('.lyric-inner');
+        function applyLines(prevText, activeText, nextText) {
+            setSlot(slots['prev-line'], prevText || '');
+            setSlot(slots['active-line'], activeText || '');
+            setSlot(slots['next-line'], nextText || '');
+        }
+
+        function setSlot(slot, text) {
+            const inner = slot.inner;
             if (inner.dataset.text === text) return;
+            const hadContent = !!inner.dataset.text;
             inner.dataset.text = text;
 
+            const size = computeFontSize(text, slot.isActive);
+
             clearTimeout(inner._fadeTimer);
+            if (!hadContent && !inner.textContent) {
+                // Nothing was showing yet - fade straight in, no need to
+                // fade out first.
+                inner.textContent = text;
+                inner.style.fontSize = size + 'px';
+                requestAnimationFrame(() => {
+                    inner.style.opacity = text ? String(slot.opacity) : '0';
+                });
+                return;
+            }
+
             inner.style.opacity = '0';
             inner._fadeTimer = setTimeout(() => {
                 inner.textContent = text;
-                fitLineText(cfg.el);
+                inner.style.fontSize = size + 'px';
                 requestAnimationFrame(() => {
-                    inner.style.opacity = text ? String(cfg.opacity) : '0';
+                    inner.style.opacity = text ? String(slot.opacity) : '0';
                 });
-            }, text || inner.textContent ? 170 : 0);
+            }, FADE_MS);
         }
 
-        // ---------- Auto-fit sizing (adapts to any viewport / orientation) ----------
-        const containerEl = document.getElementById('lyrics-container');
-        const ACTIVE_MAX = 110, ACTIVE_MIN = 20;
-        const ADJACENT_MAX = 46, ADJACENT_MIN = 14;
-
-        function fitLineText(lineEl) {
-            const inner = lineEl.querySelector('.lyric-inner');
-            if (!inner.textContent) return;
-            const isActive = lineEl.id === 'active-line';
-            const maxSize = isActive ? ACTIVE_MAX : ADJACENT_MAX;
-            const minSize = isActive ? ACTIVE_MIN : ADJACENT_MIN;
-            const maxWidth = containerEl.clientWidth * 0.96;
-            const maxHeight = containerEl.clientHeight * (isActive ? 0.5 : 0.24);
-
-            let lo = minSize, hi = maxSize, best = minSize;
-            for (let i = 0; i < 9; i++) {
-                const mid = Math.round((lo + hi) / 2);
-                inner.style.fontSize = mid + 'px';
-                const fits = inner.scrollWidth <= maxWidth && inner.scrollHeight <= maxHeight;
-                if (fits) { best = mid; lo = mid + 1; } else { hi = mid - 1; }
-            }
-            inner.style.fontSize = best + 'px';
-        }
-
-        function refitAll() {
-            Object.values(lineEls).forEach(cfg => fitLineText(cfg.el));
+        function refitCurrentLines() {
+            Object.values(slots).forEach(slot => {
+                const text = slot.inner.dataset.text || '';
+                if (!text) return;
+                slot.inner.style.fontSize = computeFontSize(text, slot.isActive) + 'px';
+            });
         }
 
         let resizeTimer = null;
         function scheduleRefit() {
             clearTimeout(resizeTimer);
-            resizeTimer = setTimeout(refitAll, 120);
-            // mobile browsers can report stale dimensions right after a
+            resizeTimer = setTimeout(refitCurrentLines, 120);
+            // Mobile browsers can report stale dimensions right after a
             // rotation event, so double-check shortly after too.
-            setTimeout(refitAll, 400);
+            setTimeout(refitCurrentLines, 400);
         }
         window.addEventListener('resize', scheduleRefit);
         window.addEventListener('orientationchange', scheduleRefit);
@@ -430,9 +482,7 @@ HTML_TEMPLATE = """
                         parsedLines = data.lines || [];
                         lastActiveIndex = -2;
 
-                        setLineText('prev-line', '');
-                        setLineText('active-line', '');
-                        setLineText('next-line', '');
+                        applyLines('', '', '');
 
                         if (data.albumArt) {
                             const img = document.getElementById('album-art-hidden');
@@ -455,9 +505,7 @@ HTML_TEMPLATE = """
                 } else {
                     isPlaying = false;
                     updatePlayPauseIcon();
-                    setLineText('prev-line', '');
-                    setLineText('active-line', '');
-                    setLineText('next-line', '');
+                    applyLines('', '', '');
 
                     if (!data.trackId) {
                         cachedTrackId = "";
@@ -498,15 +546,11 @@ HTML_TEMPLATE = """
                     const activeText = activeIndex >= 0 ? parsedLines[activeIndex].words : "";
                     const nextText = activeIndex + 1 < parsedLines.length ? parsedLines[activeIndex + 1].words : "";
 
-                    setLineText('prev-line', prevText);
-                    setLineText('active-line', activeText);
-                    setLineText('next-line', nextText);
+                    applyLines(prevText, activeText, nextText);
                 }
             } else if (!isPlaying && lastActiveIndex !== -1) {
                 lastActiveIndex = -1;
-                setLineText('prev-line', '');
-                setLineText('active-line', '');
-                setLineText('next-line', '');
+                applyLines('', '', '');
             }
             requestAnimationFrame(animationLoop);
         }
