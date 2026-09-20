@@ -30,7 +30,7 @@ HTML_TEMPLATE = """
             flex-direction: column; 
             align-items: center; 
             justify-content: center; 
-            height: 100dvh; /* Uses dynamic viewport height for perfect mobile fit */
+            height: 100dvh;
             width: 100vw;
             margin: 0; 
             overflow: hidden;
@@ -126,7 +126,6 @@ HTML_TEMPLATE = """
             transition: all 0.5s ease; 
         }
         
-        /* Auto-wrapping enabled here */
         .lyric-inner {
             white-space: pre-wrap;
             word-wrap: break-word;
@@ -151,7 +150,6 @@ HTML_TEMPLATE = """
             text-shadow: 0 4px 20px rgba(0,0,0,0.5); 
         }
 
-        /* Minimalist Playback Controls */
         #controls-bar {
             position: absolute;
             bottom: 30px;
@@ -244,7 +242,6 @@ HTML_TEMPLATE = """
         let isPlaying = false;
         let lastActiveIndex = -1;
 
-        // Ensure wake lock triggers on any screen interaction
         async function requestWakeLock() {
             try {
                 if ('wakeLock' in navigator && wakeLock === null) {
@@ -260,7 +257,6 @@ HTML_TEMPLATE = """
             navigator.sendBeacon('/logout');
         });
 
-        // Backend Control Trigger
         async function sendControl(action) {
             requestWakeLock();
             try {
@@ -269,7 +265,6 @@ HTML_TEMPLATE = """
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ action: action })
                 });
-                // Force an immediate UI poll to reflect the change
                 setTimeout(pollServer, 300);
             } catch (e) {}
         }
@@ -277,15 +272,12 @@ HTML_TEMPLATE = """
         function updatePlayPauseIcon() {
             const icon = document.getElementById('play-pause-icon');
             if (isPlaying) {
-                // Pause Icon
                 icon.innerHTML = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>';
             } else {
-                // Play Icon
                 icon.innerHTML = '<path d="M8 5v14l11-7z"/>';
             }
         }
 
-        // Clean, simple text assignment. No bouncing, no disappearing.
         function updateLine(elId, text) {
             const inner = document.getElementById(elId).querySelector('.lyric-inner');
             if (inner.innerText !== text) {
@@ -296,7 +288,6 @@ HTML_TEMPLATE = """
         async function pollServer() {
             try {
                 const fetchStart = performance.now();
-                // Cache busting parameter added to prevent browser from getting stuck on song skips
                 const res = await fetch(`/api/now-playing?t=${Date.now()}`);
                 const data = await res.json();
                 const fetchEnd = performance.now();
@@ -340,7 +331,6 @@ HTML_TEMPLATE = """
                     updateLine('active-line', '');
                     updateLine('next-line', '');
                     
-                    // Reset cache so it gracefully handles complete stops
                     if (!data.trackId) {
                         cachedTrackId = "";
                     }
@@ -416,7 +406,6 @@ def auth():
     redirect_uri = request.url_root.replace('http://', 'https://').rstrip('/') + '/callback'
     session['redirect_uri'] = redirect_uri
 
-    # Added user-modify-playback-state to allow the remote control buttons to work
     scope = "user-read-currently-playing user-modify-playback-state"
     
     auth_url = "https://accounts.spotify.com/authorize?" + urllib.parse.urlencode({
@@ -442,26 +431,29 @@ def callback():
 
     auth_base64 = str(base64.b64encode(f"{client_id}:{client_secret}".encode("utf-8")), "utf-8")
 
-    res = requests.post(
-        "https://accounts.spotify.com/api/token",
-        headers={
-            "Authorization": f"Basic {auth_base64}",
-            "Content-Type": "application/x-www-form-urlencoded"
-        },
-        data={
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": redirect_uri
-        }
-    )
+    try:
+        res = requests.post(
+            "https://accounts.spotify.com/api/token",
+            headers={
+                "Authorization": f"Basic {auth_base64}",
+                "Content-Type": "application/x-www-form-urlencoded"
+            },
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri
+            }
+        )
 
-    if not res.ok:
-        return redirect(f'/?error={urllib.parse.quote("Invalid Client ID or Secret")}')
+        if not res.ok:
+            return redirect(f'/?error={urllib.parse.quote("Invalid Client ID or Secret")}')
 
-    data = res.json()
-    session['access_token'] = data.get('access_token')
-    session['refresh_token'] = data.get('refresh_token')
-    session['expires_at'] = time.time() + data.get('expires_in', 3600) - 60
+        data = res.json()
+        session['access_token'] = data.get('access_token')
+        session['refresh_token'] = data.get('refresh_token')
+        session['expires_at'] = time.time() + data.get('expires_in', 3600) - 60
+    except Exception:
+        return redirect(f'/?error={urllib.parse.quote("Spotify Connection Error")}')
 
     return redirect('/')
 
@@ -469,21 +461,32 @@ def get_valid_token():
     if time.time() < session.get('expires_at', 0):
         return session.get('access_token')
         
-    auth_base64 = str(base64.b64encode(f"{session['client_id']}:{session['client_secret']}".encode("utf-8")), "utf-8")
-    res = requests.post(
-        "https://accounts.spotify.com/api/token",
-        headers={"Authorization": f"Basic {auth_base64}", "Content-Type": "application/x-www-form-urlencoded"},
-        data={"grant_type": "refresh_token", "refresh_token": session['refresh_token']}
-    )
-    
-    if res.ok:
-        data = res.json()
-        session['access_token'] = data.get('access_token')
-        session['expires_at'] = time.time() + data.get('expires_in', 3600) - 60
-        return session['access_token']
+    client_id = session.get('client_id', '')
+    client_secret = session.get('client_secret', '')
+    if not client_id or not client_secret:
+        return None
+
+    auth_base64 = str(base64.b64encode(f"{client_id}:{client_secret}".encode("utf-8")), "utf-8")
+    try:
+        res = requests.post(
+            "https://accounts.spotify.com/api/token",
+            headers={"Authorization": f"Basic {auth_base64}", "Content-Type": "application/x-www-form-urlencoded"},
+            data={"grant_type": "refresh_token", "refresh_token": session.get('refresh_token', '')}
+        )
+        
+        if res.ok:
+            data = res.json()
+            session['access_token'] = data.get('access_token')
+            session['expires_at'] = time.time() + data.get('expires_in', 3600) - 60
+            return session['access_token']
+    except Exception:
+        pass
+        
     return None
 
 def parse_lrc(lrc_text):
+    if not lrc_text or not isinstance(lrc_text, str):
+        return []
     lines = []
     for line in lrc_text.split('\n'):
         match = re.match(r'\[(\d+):(\d+\.\d+)\](.*)', line)
@@ -495,68 +498,75 @@ def parse_lrc(lrc_text):
 
 @app.route('/api/control', methods=['POST'])
 def control():
-    if not session.get('access_token'):
+    token = get_valid_token()
+    if not token:
         return jsonify({"success": False, "error": "Not logged in"})
         
-    token = get_valid_token()
-    action = request.json.get('action')
+    payload = request.get_json(silent=True) or {}
+    action = payload.get('action')
     
-    if action == 'playpause':
-        # Check current state to decide whether to play or pause
-        state_res = requests.get(
-            "https://api.spotify.com/v1/me/player",
-            headers={"Authorization": f"Bearer {token}"}
-        )
-        if state_res.ok and state_res.status_code != 204:
-            is_playing = state_res.json().get('is_playing', False)
-            endpoint = "pause" if is_playing else "play"
-            requests.put(f"https://api.spotify.com/v1/me/player/{endpoint}", headers={"Authorization": f"Bearer {token}"})
+    try:
+        if action == 'playpause':
+            state_res = requests.get(
+                "https://api.spotify.com/v1/me/player",
+                headers={"Authorization": f"Bearer {token}"}
+            )
+            if state_res.ok and state_res.status_code != 204:
+                is_playing = state_res.json().get('is_playing', False)
+                endpoint = "pause" if is_playing else "play"
+                requests.put(f"https://api.spotify.com/v1/me/player/{endpoint}", headers={"Authorization": f"Bearer {token}"})
+                return jsonify({"success": True})
+        
+        elif action in ['next', 'previous']:
+            requests.post(f"https://api.spotify.com/v1/me/player/{action}", headers={"Authorization": f"Bearer {token}"})
             return jsonify({"success": True})
-    
-    elif action in ['next', 'previous']:
-        requests.post(f"https://api.spotify.com/v1/me/player/{action}", headers={"Authorization": f"Bearer {token}"})
-        return jsonify({"success": True})
+    except Exception:
+        pass
         
     return jsonify({"success": False})
 
 @app.route('/api/now-playing')
 def now_playing():
-    if not session.get('access_token'):
-        return jsonify({"isPlaying": False, "error": "Not logged in"})
-        
     token = get_valid_token()
     if not token:
-         return jsonify({"isPlaying": False, "error": "Token refresh failed"})
+         return jsonify({"isPlaying": False, "error": "Token missing"})
          
-    player_res = requests.get(
-        "https://api.spotify.com/v1/me/player/currently-playing",
-        headers={"Authorization": f"Bearer {token}"}
-    )
+    try:
+        player_res = requests.get(
+            "https://api.spotify.com/v1/me/player/currently-playing",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=4
+        )
+    except Exception:
+        return jsonify({"isPlaying": False, "trackId": None})
     
-    # Safely handle the 204 empty response when paused or fully stopped
     if player_res.status_code == 204 or not player_res.ok:
         return jsonify({"isPlaying": False, "trackId": None})
         
-    player = player_res.json()
-    if not player.get('item'):
+    try:
+        player = player_res.json()
+    except Exception:
         return jsonify({"isPlaying": False, "trackId": None})
-        
-    track_id = player['item']['id']
-    track_name = player['item']['name']
-    artist_name = player['item']['artists'][0]['name']
-    duration_secs = player['item'].get('duration_ms', 0) // 1000
+
+    item = player.get('item') or {}
+    track_id = item.get('id') or ""
+    track_name = item.get('name') or ""
+    artists = item.get('artists') or []
+    artist_name = artists[0].get('name', '') if artists and isinstance(artists[0], dict) else ""
     
-    album_art = ""
-    if player['item'].get('album') and player['item']['album'].get('images'):
-        album_art = player['item']['album']['images'][0]['url']
+    if not track_name or not artist_name:
+        return jsonify({"isPlaying": False, "trackId": None})
+    
+    album = item.get('album') or {}
+    images = album.get('images') or []
+    album_art = images[0].get('url', '') if images and isinstance(images[0], dict) else ""
     
     lines = []
     
-    # 1. Strip out "(feat.)" and "- Remastered" tags automatically so the search is highly accurate
+    # Safe regex string stripping
     cleaned_name = re.sub(r'\s*[\(\[].*?(feat\.\vert{}ft\.\vert{}remaster\vert{}version\vert{}mix).*?[\)\]]', '', track_name, flags=re.IGNORECASE)
     cleaned_name = re.sub(r'\s*-.*?(Remaster|Live|Mono|Stereo).*', '', cleaned_name, flags=re.IGNORECASE).strip()
     
-    # 2. Make one single fast request to LRCLIB to grab the lyrics
     try:
         search_res = requests.get("https://lrclib.net/api/search", params={
             "q": f"{cleaned_name} {artist_name}"
@@ -564,11 +574,12 @@ def now_playing():
         
         if search_res.ok:
             search_data = search_res.json()
-            for track in search_data:
-                if track.get('syncedLyrics'):
-                    lines = parse_lrc(track['syncedLyrics'])
-                    break
-    except Exception as e:
+            if isinstance(search_data, list):
+                for track in search_data:
+                    if isinstance(track, dict) and track.get('syncedLyrics'):
+                        lines = parse_lrc(track['syncedLyrics'])
+                        break
+    except Exception:
         pass
 
     return jsonify({
