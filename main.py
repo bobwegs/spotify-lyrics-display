@@ -30,27 +30,11 @@ HTML_TEMPLATE = """
             flex-direction: column; 
             align-items: center; 
             justify-content: center; 
-            height: 100vh; 
+            height: 100dvh; /* Uses dynamic viewport height for perfect mobile fit */
             width: 100vw;
             margin: 0; 
             overflow: hidden;
             transition: background-color 2.5s cubic-bezier(0.16, 1, 0.3, 1); 
-        }
-        
-        /* Ambient breathing background effect */
-        body::after {
-            content: '';
-            position: absolute;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: radial-gradient(circle at 50% 50%, rgba(255,255,255,0.05) 0%, rgba(0,0,0,0) 70%);
-            animation: breathe 8s infinite alternate cubic-bezier(0.4, 0, 0.2, 1);
-            pointer-events: none;
-            z-index: 0;
-        }
-
-        @keyframes breathe {
-            0% { transform: scale(1); opacity: 0.3; }
-            100% { transform: scale(1.4); opacity: 1; }
         }
 
         .login-container { 
@@ -62,7 +46,6 @@ HTML_TEMPLATE = """
             max-width: 360px; 
             gap: 16px;
             z-index: 10;
-            animation: fadeIn 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
         
         .pill-input { 
@@ -83,16 +66,12 @@ HTML_TEMPLATE = """
             backdrop-filter: blur(15px);
             color: white;
             text-align: center;
-            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            transition: all 0.4s ease;
             box-shadow: 0 8px 30px rgba(0,0,0,0.4);
         }
         input.pill-input { outline: none; }
         input.pill-input::placeholder { color: #777; text-align: center; }
-        .pill-input:hover {
-            border-color: #1DB954;
-            box-shadow: 0 0 22px rgba(29, 185, 84, 0.4);
-            transform: translateY(-2px);
-        }
+        .pill-input:hover { border-color: #1DB954; }
         
         .pill-button { 
             display: flex;
@@ -113,73 +92,105 @@ HTML_TEMPLATE = """
             font-family: inherit;
             text-transform: inherit;
             letter-spacing: inherit;
-            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            transition: all 0.3s ease;
             box-shadow: 0 8px 25px rgba(29, 185, 84, 0.4);
         }
-        .pill-button:hover { 
-            transform: translateY(-2px) scale(1.02); 
-            background: #1ed760;
-            box-shadow: 0 12px 30px rgba(29, 185, 84, 0.6);
-        }
+        .pill-button:active { transform: scale(0.97); }
 
+        .error-text {
+            color: white;
+            font-size: 14px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            margin-bottom: 10px;
+        }
+        
         #lyrics-container { 
             display: flex; 
             width: 90vw; 
-            height: 100vh; 
+            height: calc(100dvh - 100px); 
             position: relative; 
             flex-direction: column; 
             align-items: center; 
             justify-content: center; 
             text-align: center;
-            gap: 4vh;
+            gap: 20px;
             z-index: 10;
-            animation: fadeIn 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
         
         .lyric-line { 
             width: 100%;
             display: flex;
             justify-content: center;
-            transform-origin: center center;
-            transition: transform 0.4s ease; 
+            align-items: center;
+            transition: all 0.5s ease; 
         }
         
+        /* Auto-wrapping enabled here */
         .lyric-inner {
-            white-space: nowrap;
-            padding: 0 20px;
-            will-change: transform, opacity, filter;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            padding: 0 10px;
+            max-width: 95vw;
+            line-height: 1.2;
+            transition: opacity 0.5s ease, font-size 0.5s ease, filter 0.5s ease;
         }
         
         .adjacent-line .lyric-inner { 
-            opacity: 0.3; 
-            font-size: clamp(16px, 3.5vw, 26px);
+            opacity: 0.35; 
+            font-size: clamp(16px, 3.5vw, 24px);
             font-weight: 600;
-            filter: blur(1.5px);
+            filter: blur(1px);
         }
         
         .active-line .lyric-inner { 
             opacity: 1; 
-            font-size: clamp(24px, 5.5vw, 46px); 
+            font-size: clamp(24px, 5.5vw, 42px); 
             font-weight: 900;
             filter: blur(0px);
-            text-shadow: 0 4px 35px rgba(0,0,0,0.65); 
+            text-shadow: 0 4px 20px rgba(0,0,0,0.5); 
         }
 
-        /* Seamless liquid glide animations triggered on text change */
-        @keyframes lyricPop {
-            0% { transform: translateY(15px) scale(0.95); opacity: 0; filter: blur(5px); }
-            100% { transform: translateY(0) scale(1); opacity: 1; filter: blur(0px); }
-        }
-        @keyframes lyricFade {
-            0% { transform: translateY(10px); opacity: 0; filter: blur(3px); }
-            100% { transform: translateY(0); opacity: 0.3; filter: blur(1.5px); }
+        /* Minimalist Playback Controls */
+        #controls-bar {
+            position: absolute;
+            bottom: 30px;
+            display: flex;
+            gap: 30px;
+            align-items: center;
+            justify-content: center;
+            z-index: 20;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 12px 30px;
+            border-radius: 40px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
+        .control-btn {
+            background: none;
+            border: none;
+            color: white;
+            cursor: pointer;
+            padding: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.2s ease, opacity 0.2s ease;
+            opacity: 0.7;
         }
         
+        .control-btn:hover, .control-btn:active {
+            opacity: 1;
+            transform: scale(1.1);
+        }
+        
+        .control-btn svg {
+            fill: white;
+            width: 24px;
+            height: 24px;
+        }
+
         #album-art-hidden { display: none; }
     </style>
 </head>
@@ -187,9 +198,9 @@ HTML_TEMPLATE = """
 
     {% if error %}
     <div class="login-container">
-        <h2 style="color: #ff4d4d; letter-spacing: 3px; font-weight: 900; margin-bottom: 5px;">ERROR</h2>
-        <p style="color: #aaa; font-size: 11px; text-align: center; margin-bottom: 25px; font-weight: 600; letter-spacing: 1px;">{{ error }}</p>
-        <a href="/" class="pill-button" style="background: rgba(30, 30, 30, 0.9); border: 1px solid rgba(255,255,255,0.1);">TRY AGAIN</a>
+        <div class="error-text">CONNECTION ERROR</div>
+        <div class="pill-input" style="background: rgba(15, 15, 15, 0.6); color: #999; cursor: default; font-size: 11px; margin-bottom: 10px;">{{ error }}</div>
+        <a href="/" class="pill-button" style="background: rgba(40, 40, 40, 0.9); border: 1px solid rgba(255,255,255,0.1);">TRY AGAIN</a>
     </div>
     {% elif not is_authed %}
     <div class="login-container">
@@ -209,6 +220,19 @@ HTML_TEMPLATE = """
         <div class="lyric-line adjacent-line" id="next-line"><div class="lyric-inner"></div></div>
     </div>
 
+    <!-- Playback Controls -->
+    <div id="controls-bar">
+        <button class="control-btn" onclick="sendControl('previous')">
+            <svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+        </button>
+        <button class="control-btn" onclick="sendControl('playpause')">
+            <svg viewBox="0 0 24 24" id="play-pause-icon"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+        </button>
+        <button class="control-btn" onclick="sendControl('next')">
+            <svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+        </button>
+    </div>
+
     <script>
         const colorThief = new ColorThief();
         let cachedTrackId = "";
@@ -220,82 +244,78 @@ HTML_TEMPLATE = """
         let isPlaying = false;
         let lastActiveIndex = -1;
 
+        // Ensure wake lock triggers on any screen interaction
         async function requestWakeLock() {
             try {
-                if ('wakeLock' in navigator) {
+                if ('wakeLock' in navigator && wakeLock === null) {
                     wakeLock = await navigator.wakeLock.request('screen');
                     wakeLock.addEventListener('release', () => { wakeLock = null; });
                 }
             } catch (err) {}
         }
-
-        document.addEventListener('visibilitychange', async () => {
-            if (wakeLock === null && document.visibilityState === 'visible') {
-                await requestWakeLock();
-            }
-        });
-
-        requestWakeLock();
+        document.body.addEventListener('click', requestWakeLock);
+        document.body.addEventListener('touchstart', requestWakeLock);
 
         window.addEventListener('beforeunload', () => {
             navigator.sendBeacon('/logout');
         });
 
-        function updateLine(elId, text, isActive) {
-            const el = document.getElementById(elId);
-            const inner = el.querySelector('.lyric-inner');
-            
+        // Backend Control Trigger
+        async function sendControl(action) {
+            requestWakeLock();
+            try {
+                await fetch('/api/control', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: action })
+                });
+                // Force an immediate UI poll to reflect the change
+                setTimeout(pollServer, 300);
+            } catch (e) {}
+        }
+
+        function updatePlayPauseIcon() {
+            const icon = document.getElementById('play-pause-icon');
+            if (isPlaying) {
+                // Pause Icon
+                icon.innerHTML = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>';
+            } else {
+                // Play Icon
+                icon.innerHTML = '<path d="M8 5v14l11-7z"/>';
+            }
+        }
+
+        // Clean, simple text assignment. No bouncing, no disappearing.
+        function updateLine(elId, text) {
+            const inner = document.getElementById(elId).querySelector('.lyric-inner');
             if (inner.innerText !== text) {
-                // Remove animation, trigger reflow, and swap text
-                inner.style.animation = 'none';
-                void inner.offsetWidth; 
                 inner.innerText = text;
-
-                // Dynamically auto-scale outer container to prevent text wrapping
-                el.style.transform = 'none';
-                const containerWidth = el.clientWidth - 40;
-                const textWidth = inner.scrollWidth;
-                if (textWidth > containerWidth && containerWidth > 0) {
-                    const scaleFactor = containerWidth / textWidth;
-                    el.style.transform = `scale(${scaleFactor})`;
-                } else {
-                    el.style.transform = 'scale(1)';
-                }
-
-                // Immediately trigger liquid pop/fade animation
-                if (text.trim() !== "") {
-                    if (isActive) {
-                        inner.style.animation = 'lyricPop 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards';
-                    } else {
-                        inner.style.animation = 'lyricFade 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards';
-                    }
-                }
             }
         }
 
         async function pollServer() {
             try {
                 const fetchStart = performance.now();
-                const res = await fetch('/api/now-playing');
+                // Cache busting parameter added to prevent browser from getting stuck on song skips
+                const res = await fetch(`/api/now-playing?t=${Date.now()}`);
                 const data = await res.json();
                 const fetchEnd = performance.now();
-                
-                // Calculate exact network latency to align the visual clock perfectly
                 const networkLatency = (fetchEnd - fetchStart) / 2;
                 
-                if (data.isPlaying) {
+                if (data.isPlaying && data.trackId) {
                     isPlaying = true;
                     serverProgress = data.progressMs;
                     serverTimestamp = performance.now() - networkLatency;
+                    updatePlayPauseIcon();
 
                     if (cachedTrackId !== data.trackId) {
                         cachedTrackId = data.trackId;
                         parsedLines = data.lines || [];
                         lastActiveIndex = -1;
 
-                        updateLine('prev-line', '', false);
-                        updateLine('active-line', '', true);
-                        updateLine('next-line', '', false);
+                        updateLine('prev-line', '');
+                        updateLine('active-line', '');
+                        updateLine('next-line', '');
 
                         if (data.albumArt) {
                             const img = document.getElementById('album-art-hidden');
@@ -315,15 +335,20 @@ HTML_TEMPLATE = """
                     }
                 } else {
                     isPlaying = false;
-                    updateLine('prev-line', '', false);
-                    updateLine('active-line', '', true);
-                    updateLine('next-line', '', false);
+                    updatePlayPauseIcon();
+                    updateLine('prev-line', '');
+                    updateLine('active-line', '');
+                    updateLine('next-line', '');
+                    
+                    // Reset cache so it gracefully handles complete stops
+                    if (!data.trackId) {
+                        cachedTrackId = "";
+                    }
                 }
             } catch(e) {}
         }
 
-        // Tighter polling interval limits drift and keeps everything ruthlessly synced
-        setInterval(pollServer, 750);
+        setInterval(pollServer, 800);
         pollServer();
 
         function animationLoop() {
@@ -332,7 +357,6 @@ HTML_TEMPLATE = """
 
                 let activeIndex = -1;
                 for (let i = 0; i < parsedLines.length; i++) {
-                    // Triggers exactly on the millisecond timestamp—zero artificial delay
                     if (parsedLines[i].startTimeMs <= currentProgress) {
                         activeIndex = i;
                     }
@@ -345,20 +369,19 @@ HTML_TEMPLATE = """
                     const activeText = activeIndex >= 0 ? parsedLines[activeIndex].words : "";
                     const nextText = activeIndex + 1 < parsedLines.length ? parsedLines[activeIndex + 1].words : "";
 
-                    updateLine('prev-line', prevText, false);
-                    updateLine('active-line', activeText, true);
-                    updateLine('next-line', nextText, false);
+                    updateLine('prev-line', prevText);
+                    updateLine('active-line', activeText);
+                    updateLine('next-line', nextText);
                 }
             } else if (!isPlaying) {
-                updateLine('prev-line', '', false);
-                updateLine('active-line', '', true);
-                updateLine('next-line', '', false);
+                updateLine('prev-line', '');
+                updateLine('active-line', '');
+                updateLine('next-line', '');
             }
             requestAnimationFrame(animationLoop);
         }
         requestAnimationFrame(animationLoop);
     </script>
-    {% endif %}
 </body>
 </html>
 """
@@ -393,7 +416,8 @@ def auth():
     redirect_uri = request.url_root.replace('http://', 'https://').rstrip('/') + '/callback'
     session['redirect_uri'] = redirect_uri
 
-    scope = "user-read-currently-playing"
+    # Added user-modify-playback-state to allow the remote control buttons to work
+    scope = "user-read-currently-playing user-modify-playback-state"
     
     auth_url = "https://accounts.spotify.com/authorize?" + urllib.parse.urlencode({
         "response_type": "code",
@@ -469,6 +493,32 @@ def parse_lrc(lrc_text):
                 lines.append({"startTimeMs": int((mins * 60 + secs) * 1000), "words": words})
     return lines
 
+@app.route('/api/control', methods=['POST'])
+def control():
+    if not session.get('access_token'):
+        return jsonify({"success": False, "error": "Not logged in"})
+        
+    token = get_valid_token()
+    action = request.json.get('action')
+    
+    if action == 'playpause':
+        # Check current state to decide whether to play or pause
+        state_res = requests.get(
+            "https://api.spotify.com/v1/me/player",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        if state_res.ok and state_res.status_code != 204:
+            is_playing = state_res.json().get('is_playing', False)
+            endpoint = "pause" if is_playing else "play"
+            requests.put(f"https://api.spotify.com/v1/me/player/{endpoint}", headers={"Authorization": f"Bearer {token}"})
+            return jsonify({"success": True})
+    
+    elif action in ['next', 'previous']:
+        requests.post(f"https://api.spotify.com/v1/me/player/{action}", headers={"Authorization": f"Bearer {token}"})
+        return jsonify({"success": True})
+        
+    return jsonify({"success": False})
+
 @app.route('/api/now-playing')
 def now_playing():
     if not session.get('access_token'):
@@ -483,17 +533,17 @@ def now_playing():
         headers={"Authorization": f"Bearer {token}"}
     )
     
+    # Safely handle the 204 empty response when paused or fully stopped
     if player_res.status_code == 204 or not player_res.ok:
-        return jsonify({"isPlaying": False})
+        return jsonify({"isPlaying": False, "trackId": None})
         
     player = player_res.json()
     if not player.get('item'):
-        return jsonify({"isPlaying": False})
+        return jsonify({"isPlaying": False, "trackId": None})
         
     track_id = player['item']['id']
     track_name = player['item']['name']
     artist_name = player['item']['artists'][0]['name']
-    album_name = player['item'].get('album', {}).get('name', '')
     duration_secs = player['item'].get('duration_ms', 0) // 1000
     
     album_art = ""
@@ -502,14 +552,14 @@ def now_playing():
     
     lines = []
     
-    # 1. Clean track name properly to massively improve LRCLIB fallback search accuracy without crashing
+    # 1. Strip out "(feat.)" and "- Remastered" tags automatically so the search is highly accurate
     cleaned_name = re.sub(r'\s*[\(\[].*?(feat\.\vert{}ft\.\vert{}remaster\vert{}version\vert{}mix).*?[\)\]]', '', track_name, flags=re.IGNORECASE)
     cleaned_name = re.sub(r'\s*-.*?(Remaster|Live|Mono|Stereo).*', '', cleaned_name, flags=re.IGNORECASE).strip()
     
-    # 2. Search LRCLIB with full exact track name
+    # 2. Make one single fast request to LRCLIB to grab the lyrics
     try:
         search_res = requests.get("https://lrclib.net/api/search", params={
-            "q": f"{track_name} {artist_name}"
+            "q": f"{cleaned_name} {artist_name}"
         }, headers={"User-Agent": "InCarLyricsApp/1.0"}, timeout=3)
         
         if search_res.ok:
@@ -520,39 +570,6 @@ def now_playing():
                     break
     except Exception as e:
         pass
-
-    # 3. Fallback: Search LRCLIB with cleaned track name (removes feats and tags)
-    if not lines and cleaned_name != track_name:
-        try:
-            search_res = requests.get("https://lrclib.net/api/search", params={
-                "q": f"{cleaned_name} {artist_name}"
-            }, headers={"User-Agent": "InCarLyricsApp/1.0"}, timeout=3)
-            
-            if search_res.ok:
-                search_data = search_res.json()
-                for track in search_data:
-                    if track.get('syncedLyrics'):
-                        lines = parse_lrc(track['syncedLyrics'])
-                        break
-        except Exception as e:
-            pass
-
-    # 4. Final Fallback: Exact match via /api/get
-    if not lines:
-        try:
-            get_res = requests.get("https://lrclib.net/api/get", params={
-                "track_name": track_name, 
-                "artist_name": artist_name,
-                "album_name": album_name,
-                "duration": duration_secs
-            }, headers={"User-Agent": "InCarLyricsApp/1.0"}, timeout=3)
-            
-            if get_res.ok:
-                get_data = get_res.json()
-                if get_data.get('syncedLyrics'):
-                    lines = parse_lrc(get_data['syncedLyrics'])
-        except Exception as e:
-            pass
 
     return jsonify({
         "isPlaying": player.get('is_playing', False),
