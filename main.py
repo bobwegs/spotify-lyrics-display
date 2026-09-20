@@ -20,8 +20,14 @@ HTML_TEMPLATE = """
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Spotify</title>
-    <!-- Geometric All-Caps Premium Font -->
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;800;900&display=swap" rel="stylesheet">
+    <!-- Geometric All-Caps Premium Font. Every weight actually used
+         anywhere on the site (pills, buttons, both lyric lines) is
+         requested here as its own static face so nothing on the page ever
+         falls back to a browser-synthesized weight or a different
+         fallback typeface. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800;900&display=block" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/color-thief/2.3.0/color-thief.umd.js"></script>
     <style>
         * { -webkit-tap-highlight-color: transparent; }
@@ -40,8 +46,15 @@ HTML_TEMPLATE = """
             width: 100vw;
             margin: 0;
             overflow: hidden;
-            transition: background-color 2.2s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: background-color 2.2s cubic-bezier(0.4, 0, 0.2, 1),
+                        opacity 0.2s ease;
         }
+
+        /* Nothing is shown until the real webfont is confirmed loaded (or
+           a short timeout passes), so no element can ever paint in a
+           fallback typeface that looks different from the rest of the
+           page. See the inline script right after <body>. */
+        body:not(.fonts-ready) { opacity: 0; }
 
         .login-container {
             display: flex;
@@ -198,6 +211,27 @@ HTML_TEMPLATE = """
     </style>
 </head>
 <body>
+    <script>
+        // Reveal the page only once the Montserrat weights we use are
+        // actually loaded (or after a short safety timeout), so the pills,
+        // buttons and lyrics are always painted in the same real font
+        // instead of a fallback that briefly looks different.
+        (function () {
+            function reveal() { document.body.classList.add('fonts-ready'); }
+            if (document.fonts && document.fonts.ready) {
+                Promise.race([
+                    Promise.all([
+                        document.fonts.load("700 16px 'Montserrat'"),
+                        document.fonts.load("900 16px 'Montserrat'"),
+                        document.fonts.ready
+                    ]),
+                    new Promise(function (r) { setTimeout(r, 700); })
+                ]).then(reveal, reveal);
+            } else {
+                reveal();
+            }
+        })();
+    </script>
 
     {% if error %}
     <div class="login-container">
@@ -228,7 +262,7 @@ HTML_TEMPLATE = """
         <button class="control-btn" onclick="sendControl('previous')">
             <svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
         </button>
-        <button class="control-btn" onclick="sendControl('playpause')">
+        <button class="control-btn" onclick="togglePlayPause()">
             <svg viewBox="0 0 24 24" id="play-pause-icon"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
         </button>
         <button class="control-btn" onclick="sendControl('next')">
@@ -313,16 +347,44 @@ HTML_TEMPLATE = """
         });
 
         // ---------- Playback controls ----------
+        // Optimistic play/pause: the button flips instantly on click instead
+        // of waiting on a network round trip, and we tell the server the
+        // exact target state (no extra state-read call, no race). Polling
+        // is told to briefly trust the optimistic state so a slightly-stale
+        // response from Spotify can't flicker the icon back before the
+        // change has actually propagated.
+        let optimisticIsPlaying = null;
+        let optimisticExpires = 0;
+
         async function sendControl(action) {
             requestWakeLock();
             try {
-                await fetch('/api/control', {
+                const res = await fetch('/api/control', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ action: action })
                 });
-                setTimeout(() => pollServer(true), 250);
-            } catch (e) {}
+                const data = await res.json().catch(() => ({}));
+                if (!data.success) {
+                    // Server confirmed the action failed - drop the
+                    // optimistic override so the next poll shows reality.
+                    optimisticIsPlaying = null;
+                    optimisticExpires = 0;
+                }
+            } catch (e) {
+                optimisticIsPlaying = null;
+                optimisticExpires = 0;
+            }
+            pollServer(true);
+        }
+
+        function togglePlayPause() {
+            const target = !isPlaying;
+            isPlaying = target;
+            optimisticIsPlaying = target;
+            optimisticExpires = performance.now() + 2500;
+            updatePlayPauseIcon();
+            sendControl(target ? 'play' : 'pause');
         }
 
         function updatePlayPauseIcon() {
@@ -471,7 +533,20 @@ HTML_TEMPLATE = """
                 const networkLatency = (fetchEnd - fetchStart) / 2;
                 missCount = 0;
 
-                if (data.isPlaying && data.trackId) {
+                // Reconcile server truth with an in-flight optimistic
+                // play/pause: trust the optimistic value until either the
+                // server confirms it or the grace window runs out.
+                let effectiveIsPlaying = data.isPlaying;
+                if (optimisticIsPlaying !== null) {
+                    if (data.isPlaying === optimisticIsPlaying || performance.now() > optimisticExpires) {
+                        optimisticIsPlaying = null;
+                        optimisticExpires = 0;
+                    } else {
+                        effectiveIsPlaying = optimisticIsPlaying;
+                    }
+                }
+
+                if (effectiveIsPlaying && data.trackId) {
                     isPlaying = true;
                     serverProgress = data.progressMs;
                     serverTimestamp = performance.now() - networkLatency;
@@ -502,14 +577,20 @@ HTML_TEMPLATE = """
                             document.body.style.backgroundColor = '#121212';
                         }
                     }
+                } else if (data.trackId) {
+                    // Paused, but a track is still loaded - freeze the
+                    // lyrics on screen exactly as they are (matches how
+                    // Spotify's own lyrics view behaves on pause) instead
+                    // of blanking the screen.
+                    isPlaying = false;
+                    updatePlayPauseIcon();
                 } else {
+                    // Nothing loaded at all.
                     isPlaying = false;
                     updatePlayPauseIcon();
                     applyLines('', '', '');
-
-                    if (!data.trackId) {
-                        cachedTrackId = "";
-                    }
+                    lastActiveIndex = -1;
+                    cachedTrackId = "";
                 }
             } catch (e) {
                 // Network hiccup: count misses, and if we've been stuck for a
@@ -548,10 +629,9 @@ HTML_TEMPLATE = """
 
                     applyLines(prevText, activeText, nextText);
                 }
-            } else if (!isPlaying && lastActiveIndex !== -1) {
-                lastActiveIndex = -1;
-                applyLines('', '', '');
             }
+            // When paused, intentionally do nothing here: the lyric lines
+            // stay exactly as they were, frozen, rather than disappearing.
             requestAnimationFrame(animationLoop);
         }
         requestAnimationFrame(animationLoop);
@@ -573,6 +653,10 @@ def index():
         error=error_msg,
         nosleep_video=NOSLEEP_VIDEO_B64
     )
+
+@app.route('/favicon.ico')
+def favicon():
+    return '', 204
 
 @app.route('/logout', methods=['POST', 'GET'])
 def logout():
@@ -597,7 +681,7 @@ def auth():
     redirect_uri = request.url_root.replace('http://', 'https://').rstrip('/') + '/callback'
     session['redirect_uri'] = redirect_uri
 
-    scope = "user-read-currently-playing user-modify-playback-state"
+    scope = "user-read-currently-playing user-read-playback-state user-modify-playback-state"
 
     auth_url = "https://accounts.spotify.com/authorize?" + urllib.parse.urlencode({
         "response_type": "code",
@@ -799,33 +883,34 @@ def control():
     action = payload.get('action')
 
     try:
-        if action == 'playpause':
-            state_res = requests.get(
-                "https://api.spotify.com/v1/me/player",
-                headers={"Authorization": f"Bearer {token}"},
-                timeout=5
-            )
-            if state_res.ok and state_res.status_code != 204:
-                is_playing = state_res.json().get('is_playing', False)
-                endpoint = "pause" if is_playing else "play"
-                requests.put(
-                    f"https://api.spotify.com/v1/me/player/{endpoint}",
-                    headers={"Authorization": f"Bearer {token}"},
-                    timeout=5
-                )
-                return jsonify({"success": True})
-
-        elif action in ['next', 'previous']:
-            requests.post(
+        if action in ('play', 'pause'):
+            # The client already knows whether playback is playing or paused
+            # from its own polling, so it tells us the target state directly.
+            # This avoids an extra GET /me/player round trip (which also
+            # needs a broader scope than reading currently-playing does) and
+            # the staleness/race that round trip could introduce.
+            res = requests.put(
                 f"https://api.spotify.com/v1/me/player/{action}",
                 headers={"Authorization": f"Bearer {token}"},
                 timeout=5
             )
-            return jsonify({"success": True})
-    except Exception:
-        pass
+            if res.status_code in (200, 202, 204):
+                return jsonify({"success": True})
+            return jsonify({"success": False, "error": f"spotify_{res.status_code}"})
 
-    return jsonify({"success": False})
+        elif action in ('next', 'previous'):
+            res = requests.post(
+                f"https://api.spotify.com/v1/me/player/{action}",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=5
+            )
+            if res.status_code in (200, 202, 204):
+                return jsonify({"success": True})
+            return jsonify({"success": False, "error": f"spotify_{res.status_code}"})
+    except Exception as e:
+        return jsonify({"success": False, "error": "network_error"})
+
+    return jsonify({"success": False, "error": "unknown_action"})
 
 @app.route('/api/now-playing')
 def now_playing():
