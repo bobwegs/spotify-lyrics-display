@@ -12,7 +12,7 @@ app.secret_key = "super_secret_car_lyrics_key"
 # Tiny silent looping mp4 used as an iOS "no-sleep" fallback (Wake Lock API
 # isn't available on iOS Safari / older iOS versions). Generated locally,
 # 2x2px, ~1s, silent audio track so autoplay-muted rules are happy.
-NOSLEEP_VIDEO_B64 = "AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAAIZnJlZQAAAwJtZGF03gIATGF2YzYxLjE5LjEwMQACMEAOAAACrQYF//+p3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE2NCByMzEwOCAzMWUxOWY5IC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAyMyAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVmPTMgZGVibG9jaz0xOjA6MCBhbmFseXNlPTB4MzoweDExMyBtZT1oZXggc3VibWU9NyBwc3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MSA4eDhkY3Q9MSBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0tMiB0aHJlYWRzPTEgbG9va2FoZWFkX3RocmVhZHM9MSBzbGljZWRfdGhyZWFkcz0wIG5yPTAgZGVjaW1hdGU9MSBpbnRlcmxhY2VkPTAgYmx1cmF5X2NvbXBhdD0wIGNvbnN0cmFpbmVkX2ludHJhPTAgYmZyYW1lcz0zIGJfcHlyYW1pZD0yIGJfYWRhcHQ9MSBiX2JpYXM9MCBkaXJlY3Q9MSB3ZWlnaHRiPTEgb3Blbl9nb3A9MCB3ZWlnaHRwPTIga2V5aW50PTI1MCBrZXlpbnRfbWluPTEgc2NlbmVjdXQ9NDAgaW50cmFfcmVmcmVzaD0wIHJjX2xvb2thaGVhZD00MCByYz1jcmYgbWJ0cmVlPTEgY3JmPTIzLjAgcWNvbXA9MC42MCBxcG1pbj0wIHFwbWF4PTY5IHFwc3RlcD00IGlwX3JhdGlvPTEuNDAgYXE9MToxLjAwAIAAAAAQZYiEABX//vfJ78Cm69vfgQEYIAcBGCAHARggBwEYIAcBGCAHARggBwEYIAcBGCAHAAAFg21vb3YAAABsbXZoZAAAAAAAAAAAAAAAAAAAA+gAAAPoAAEAAAEAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMAAAJBdHJhawAAAFx0a2hkAAAAAwAAAAAAAAAAAAAAAQAAAAAAAAPoAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAQAAAAAACAAAAAgAAAAAAJGVkdHMAAAAcZWxzdAAAAAAAAAABAAAD6AAAAAAAAQAAAAABuW1kaWEAAAAgbWRoZAAAAAAAAAAAAAAAAAAAQAAAAEAAVcQAAAAAAC1oZGxyAAAAAAAAAAB2aWRlAAAAAAAAAAAAAAAAVmlkZW9IYW5kbGVyAAAAAWRtaW5mAAAAFHZtaGQAAAABAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAAEkc3RibAAAAMBzdHNkAAAAAAAAAAEAAACwYXZjMQAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAACAAIASAAAAEgAAAAAAAAAARVMYXZjNjEuMTkuMTAxIGxpYngyNjQAAAAAAAAAAAAAABj//wAAADZhdmNDAWQACv/hABlnZAAKrNlfiIjARAAAAwAEAAADAAg8SJZYAQAGaOvjyyLA/fj4AAAAABBwYXNwAAAAAQAAAAEAAAAUYnRydAAAAAAAABYoAAAAAAAAABhzdHRzAAAAAAAAAAEAAAABAABAAAAAABxzdHNjAAAAAAAAAAEAAAABAAAAAQAAAAEAAAAUc3RzegAAAAAAAALFAAAAAQAAABRzdGNvAAAAAAAAAAEAAABFAAACbXRyYWsAAABcdGtoZAAAAAMAAAAAAAAAAAAAAAIAAAAAAAAD6AAAAAAAAAAAAAAAAQEAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAA+gAAAQAAAEAAAAAAeVtZGlhAAAAIG1kaGQAAAAAAAAAAAAAAAAAAB9AAAAjQFXEAAAAAAAtaGRscgAAAAAAAAAAc291bgAAAAAAAAAAAAAAAFNvdW5kSGFuZGxlcgAAAAGQbWluZgAAABBzbWhkAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAAFUc3RibAAAAH5zdHNkAAAAAAAAAAEAAABubXA0YQAAAAAAAAABAAAAAAAAAAAAAQAQAAAAAB9AAAAAAAA2ZXNkcwAAAAADgICAJQACAASAgIAXQBUAAAAAALuAAAABdwWAgIAFFYhW5QAGgICAAQIAAAAUYnRydAAAAAAAALuAAAABdwAAACBzdHRzAAAAAAAAAAIAAAAIAAAEAAAAAAEAAANAAAAAKHN0c2MAAAAAAAAAAgAAAAEAAAABAAAAAQAAAAIAAAAIAAAAAQAAADhzdHN6AAAAAAAAAAAAAAAJAAAAFQAAAAQAAAAEAAAABAAAAAQAAAAEAAAABAAAAAQAAAAEAAAAGHN0Y28AAAAAAAAAAgAAADAAAAMKAAAAGnNncGQBAAAAcm9sbAAAAAIAAAAB//8AAAAcc2JncAAAAAByb2xsAAAAAQAAAAkAAAABAAAAYXVkdGEAAABZbWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwAAAAAAAAAAAAAAAAsaWxzdAAAACSpdG9vAAAAHGRhdGEAAAABAAAAAExhdmY2MS43LjEwMw=="
+NOSLEEP_VIDEO_B64 = "AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAAIZnJlZQAAAwJtZGF03gIATGF2YzYxLjE5LjEwMQACMEAOAAACrQYF//+p3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE2NCByMzEwOCAzMWUxOWY5IC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAyMyAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVmPTMgZGVibG9jaz0xOjA6MCBhbmFseXNlPTB4MzoweDExMyBtZT1oZXggc3VibWU9NyBwc3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MSA4eDhkY3Q9MSBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0tMiB0aHJlYWRzPTEgbG9va2FoZWFkX3RocmVhZHM9MSBzbGljZWRfdGhyZWFkcz0wIG5yPTAgZGVjaW1hdGU9MSBpbnRlcmxhY2VkPTAgYmx1cmF5X2NvbXBhdD0wIGNvbnN0cmFpbmVkX2ludHJhPTAgYmZyYW1lcz0zIGJfcHlyYW1pZD0yIGJfYWRhcHQ9MSBiX2JpYXM9MCBkaXJlY3Q9MSB3ZWlnaHRiPTEgb3Blbl9nb3A9MCB3ZWlnaHRwPTIga2V5aW50PTI1MCBrZXlpbnRfbWluPTEgc2NlbmVjdXQ9NDAgaW50cmFfcmVmcmVzaD0wIHJjX2xvb2thaGVhZD00MCByYz1jcmYgbWJ0cmVlPTEgY3JmPTIzLjAgcWNvbXA9MC42MCBxcG1pbj0wIHFwbWF4PTY5IHFwc3RlcD00IGlwX3JhdGlvPTEuNDAgYXE9MToxLjAwAIAAAAAQZYiEABX//vfJ78Cm69vfgQEYIAcBGCAHARggBwEYIAcBGCAHARggBwEYIAcBGCAHAAAFg21vb3YAAABsbXZoZAAAAAAAAAAAAAAAAAAAA+gAAAPoAAEAAAEAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMAAAJBdHJhawAAAFx0a2hkAAAAAwAAAAAAAAAAAAAAAQAAAAAAAAPoAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAQAAAAAACAAAAAgAAAAAAJGVkdHMAAAAcZWxzdAAAAAAAAAABAAAD6AAAAAAAAQAAAAABuW1kaWEAAAAgbWRoZAAAAAAAAAAAAAAAAAAAQAAAAEAAVcQAAAAAAC1oZGxyAAAAAAAAAAB2aWRlAAAAAAAAAAAAAAAAVmlkZW9IYW5kbGVyAAAAAWRtaW5mAAAAFHZtaGQAAAABAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAAEkc3RibAAAAMBzdHNkAAAAAAAAAAEAAACwYXZjMQAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAACAAIASAAAAEgAAAAAAAAAARVMYXZjNjEuMTkuMTAxIGxpYngyNjQAAAAAAAAAAAAAABj//wAAADZhdmNDAWQACv/hABlnZAAKrNlfiIjARAAAAwAEAAADAAg8SJZYAQAGaOvjyyLA/fj4AAAAABBwYXNwAAAAAQAAAAEAAAAUYnRydAAAAAAAABYoAAAAAAAAABhzdHRzAAAAAAAAAAEAAAABAABAAAAAABxzdHNjAAAAAAAAAAEAAAABAAAAAQAAAAEAAAAUc3RzegAAAAAAAALFAAAAAQAAABRzdGNvAAAAAAAAAAEAAABFAAACbXRyYWsAAABcdGtoZAAAAAMAAAAAAAAAAAAAAAIAAAAAAAAD6AAAAAAAAAAAAAAAAQEAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAA+gAAAQAAAEAAAAAAeVtZGlhAAAAIG1kaGQAAAAAAAAAAAAAAAAAAB9AAAAjQFXEAAAAAAAtaGRscgAAAAAAAAAAc291bgAAAAAAAAAAAAAAAFNvdW5kSGFuZGxlcgAAAAGQbWluZgAAABBzbWhkAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAAFUc3RibAAAAH5zdHNkAAAAAAAAAAEAAABubXA0YQAAAAAAAAABAAAAAAAAAAAAAQAQAAAAAB9AAAAAAAA2ZXNkcwAAAAADgICAJQACAASAgIAXQBUAAAAAALuAAAABdwWAgIAFFYhW5QAGgICAAQIAAAAUYnRydAAAAAAAALuAAAABdwAAACBzdHRzAAAAAAAAAAIAAAAIAAAEAAAAAAEAAANAAAAAKHN0c2MAAAAAAAAAAgAAAAEAAAABAAAAAQAAAAIAAAAIAAAAAQAAADhzdHN6AAAAAAAAAAAAAAAJAAAAFQAAAAQAAAAEAAAABAAAAAQAAAAEAAAABAAAAAQAAAAEAAAAGHN0Y28AAAAAAAAAAgAAADAAAAMKAAAAGnNncGQBAAAAcm9sbAAAAAIAAAAB//8AAAAcc2JncAAAAAByb2xsAAAAAQAAAAkAAAABAAAAYXVkdGEAAABZbWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwAAAAAAAAAAAAAAAAsaWxzdAAAACSpdG9vAAAAHGRhdGEAAAABAAAAAExhdmY2MS43LjEwMw=="
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -147,12 +147,13 @@ HTML_TEMPLATE = """
         }
 
         .lyric-inner {
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
+            white-space: nowrap;
             padding: 0 10px;
             max-width: 100%;
-            line-height: 1.25;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: inline-block;
+            line-height: 1.15;
             opacity: 0;
             will-change: opacity, font-size;
             transition: opacity 0.32s cubic-bezier(0.4, 0, 0.2, 1),
@@ -185,68 +186,42 @@ HTML_TEMPLATE = """
             box-sizing: border-box;
         }
 
-        /* Progress bar sits right along the top edge of the pill, curving
-           with it, so it reads as part of the pill's border rather than a
-           separate element floating inside it. */
-        #progress-track {
+        /* Progress indicator traces the whole perimeter of the pill as a
+           border-like ring (SVG path matching the pill's own rounded-rect
+           shape), rather than a bar across just the top edge. Filling
+           starts at top-center and sweeps clockwise all the way around. */
+        #progress-ring {
             position: absolute;
             top: 0;
-            left: 14px;
-            right: 14px;
-            height: 20px;
-            display: flex;
-            align-items: center;
+            left: 0;
+            pointer-events: none;
+            display: block;
+            z-index: 21;
+            overflow: visible;
+        }
+
+        #progress-hit {
+            pointer-events: stroke;
             cursor: pointer;
             touch-action: none;
-            z-index: 21;
-        }
-
-        #progress-track::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            right: 0;
-            top: 50%;
-            height: 3px;
-            transform: translateY(-50%);
-            background: rgba(255, 255, 255, 0.22);
-            border-radius: 3px;
-        }
-
-        #progress-fill {
-            position: absolute;
-            left: 0;
-            top: 50%;
-            height: 3px;
-            transform: translateY(-50%);
-            width: 0%;
-            background: #1DB954;
-            border-radius: 3px;
-            transition: width 0.1s linear;
-        }
-
-        #progress-track.seeking #progress-fill,
-        #progress-track.seeking #progress-thumb {
-            transition: none;
         }
 
         #progress-thumb {
-            position: absolute;
-            top: 50%;
-            left: 0%;
-            width: 11px;
-            height: 11px;
-            border-radius: 50%;
-            background: #fff;
-            transform: translate(-50%, -50%);
-            box-shadow: 0 1px 4px rgba(0,0,0,0.4);
-            transition: left 0.1s linear, opacity 0.15s ease;
             opacity: 0;
+            transition: opacity 0.15s ease;
         }
 
         #controls-bar:hover #progress-thumb,
-        #progress-track.seeking #progress-thumb {
+        #progress-ring.seeking #progress-thumb {
             opacity: 1;
+        }
+
+        #progress-track-fill {
+            transition: stroke-dasharray 0.1s linear;
+        }
+
+        #progress-ring.seeking #progress-track-fill {
+            transition: none;
         }
 
         #now-playing-title {
@@ -260,6 +235,13 @@ HTML_TEMPLATE = """
             height: 18px;
         }
 
+        /* When the title is too long to fully fit even at the smallest
+           readable size, it left-aligns and scrolls (marquee) instead of
+           being permanently truncated with an ellipsis. */
+        #now-playing-title.marquee-active {
+            justify-content: flex-start;
+        }
+
         #now-playing-title-inner {
             color: rgba(255, 255, 255, 0.85);
             font-weight: 700;
@@ -270,6 +252,17 @@ HTML_TEMPLATE = """
             overflow: hidden;
             text-overflow: ellipsis;
             display: inline-block;
+            flex-shrink: 0;
+        }
+
+        #now-playing-title-inner.marquee {
+            animation: marquee-scroll var(--marquee-duration, 6s) linear infinite;
+        }
+
+        @keyframes marquee-scroll {
+            0%, 10%   { transform: translateX(0); }
+            45%, 55%  { transform: translateX(var(--marquee-distance, 0)); }
+            90%, 100% { transform: translateX(0); }
         }
 
         #controls-row {
@@ -355,10 +348,14 @@ HTML_TEMPLATE = """
 
     <!-- Playback Controls -->
     <div id="controls-bar">
-        <div id="progress-track">
-            <div id="progress-fill"></div>
-            <div id="progress-thumb"></div>
-        </div>
+        <svg id="progress-ring" xmlns="http://www.w3.org/2000/svg">
+            <g id="progress-ring-group">
+                <path id="progress-track-bg" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="3" stroke-linecap="round"></path>
+                <path id="progress-track-fill" fill="none" stroke="#1DB954" stroke-width="3" stroke-linecap="round"></path>
+                <path id="progress-hit" fill="none" stroke="rgba(0,0,0,0.01)" stroke-width="26" stroke-linecap="round"></path>
+                <circle id="progress-thumb" r="5.5" fill="#fff"></circle>
+            </g>
+        </svg>
         <div id="now-playing-title"><span id="now-playing-title-inner"></span></div>
         <div id="controls-row">
             <button class="control-btn" onclick="sendControl('previous')">
@@ -507,15 +504,15 @@ HTML_TEMPLATE = """
         // always yields the same size, so there is no race where a line
         // briefly renders at the wrong size mid-transition.
         const containerEl = document.getElementById('lyrics-container');
-        const ACTIVE_MAX = 100, ACTIVE_MIN = 22;
-        const ADJACENT_MAX = 40, ADJACENT_MIN = 14;
+        const ACTIVE_MAX = 100, ACTIVE_MIN = 12;
+        const ADJACENT_MAX = 40, ADJACENT_MIN = 9;
         const ACTIVE_WEIGHT = 900, ADJACENT_WEIGHT = 600;
         const REF_SIZE = 100;
 
         const measureCanvas = document.createElement('canvas');
         const measureCtx = measureCanvas.getContext('2d');
         if (document.fonts && document.fonts.ready) {
-            document.fonts.ready.then(() => { refitCurrentLines(); });
+            document.fonts.ready.then(() => { refitCurrentLines(); fitTitle(); layoutRing(); });
         }
 
         function measureWidthAtRef(text, weight) {
@@ -523,6 +520,11 @@ HTML_TEMPLATE = """
             return measureCtx.measureText(text).width || 1;
         }
 
+        // Every lyric line renders on exactly one physical line, however
+        // short (a single word) or long it is - never wrapped to two or
+        // three lines. Size is picked purely so the whole line's width
+        // fits the available space; a one-line height cap keeps very long
+        // lines from getting tall enough to clip vertically instead.
         function computeFontSize(text, isActive) {
             const maxSize = isActive ? ACTIVE_MAX : ADJACENT_MAX;
             const minSize = isActive ? ACTIVE_MIN : ADJACENT_MIN;
@@ -530,19 +532,14 @@ HTML_TEMPLATE = """
 
             const weight = isActive ? ACTIVE_WEIGHT : ADJACENT_WEIGHT;
             const maxWidth = containerEl.clientWidth * 0.94;
-            // Longer lines are allowed to wrap to two physical lines, so give
-            // width-based sizing a little headroom instead of forcing every
-            // line onto one row at a tiny size.
-            const wrapAllowance = text.length > 24 ? 1.55 : 1;
-
             const refWidth = measureWidthAtRef(text, weight);
-            let size = (maxWidth * wrapAllowance / refWidth) * REF_SIZE;
+            let size = (maxWidth / refWidth) * REF_SIZE;
 
-            // Cap by available height too (roughly, assuming up to 2 wrapped
-            // lines at this font size).
-            const maxHeight = containerEl.clientHeight * (isActive ? 0.46 : 0.22);
-            const lines = wrapAllowance > 1 ? 2 : 1;
-            const heightCap = maxHeight / (lines * 1.25);
+            // Cap by the vertical room one line is actually allotted, so a
+            // short line at max size never grows tall enough to crowd its
+            // neighbours.
+            const maxHeight = containerEl.clientHeight * (isActive ? 0.30 : 0.16);
+            const heightCap = maxHeight / 1.15;
             size = Math.min(size, heightCap);
 
             size = Math.min(size, maxSize);
@@ -615,13 +612,18 @@ HTML_TEMPLATE = """
         window.addEventListener('resize', scheduleRefit);
         window.addEventListener('orientationchange', scheduleRefit);
 
-        // ---------- Now-playing title: always sized to fit the pill ----------
-        // Same idea as the lyric auto-fit: measure the text once at a
-        // reference size and scale down to the exact width available,
-        // never wrapping and never overflowing the pill.
+        // ---------- Now-playing title: fit, and marquee-scroll if it still
+        // doesn't fit ----------
+        // First the same idea as the lyric auto-fit: shrink to the exact
+        // width available, down to a readable floor. If the text is still
+        // wider than the pill at that floor size, it switches to a
+        // left-aligned auto-scrolling marquee instead of ellipsis-clipping
+        // forever, so the whole title eventually becomes visible.
         const titleEl = document.getElementById('now-playing-title');
         const titleInnerEl = document.getElementById('now-playing-title-inner');
-        const TITLE_MAX = 15, TITLE_MIN = 7;
+        const TITLE_MAX = 15, TITLE_MIN = 9;
+        const MARQUEE_PX_PER_SEC = 38;
+        const MARQUEE_TRAVEL_FRACTION = 0.35; // matches the keyframe % below
         let currentTitleText = '';
 
         function computeTitleFontSize(text) {
@@ -635,45 +637,171 @@ HTML_TEMPLATE = """
             return Math.round(size * 10) / 10;
         }
 
-        function fitTitle() {
+        function applyTitleLayout() {
             if (!currentTitleText) return;
             titleInnerEl.style.fontSize = computeTitleFontSize(currentTitleText) + 'px';
+
+            // Measure the actual rendered box after the size lands (canvas
+            // measurement at a reference size isn't pixel-exact once
+            // letter-spacing/uppercase text-transform are involved), then
+            // decide whether a marquee is needed.
+            requestAnimationFrame(() => {
+                if (!currentTitleText) return;
+                const containerWidth = titleEl.clientWidth;
+                const textWidth = titleInnerEl.scrollWidth;
+                const overflow = textWidth - containerWidth;
+
+                if (overflow > 2) {
+                    const distance = overflow + 16;
+                    const travelSeconds = distance / MARQUEE_PX_PER_SEC;
+                    const duration = Math.max(4, travelSeconds / MARQUEE_TRAVEL_FRACTION);
+                    titleInnerEl.style.setProperty('--marquee-distance', `-${distance}px`);
+                    titleInnerEl.style.setProperty('--marquee-duration', `${duration.toFixed(2)}s`);
+                    titleEl.classList.add('marquee-active');
+                    titleInnerEl.classList.add('marquee');
+                } else {
+                    titleEl.classList.remove('marquee-active');
+                    titleInnerEl.classList.remove('marquee');
+                    titleInnerEl.style.removeProperty('--marquee-distance');
+                }
+            });
+        }
+
+        function fitTitle() {
+            applyTitleLayout();
         }
 
         function setTitle(title, artist) {
             const text = artist ? `${title} — ${artist}` : title;
             if (text === currentTitleText) return;
             currentTitleText = text;
+            titleInnerEl.classList.remove('marquee');
+            titleEl.classList.remove('marquee-active');
             titleInnerEl.textContent = text;
-            titleInnerEl.style.fontSize = computeTitleFontSize(text) + 'px';
+            applyTitleLayout();
         }
 
-        // ---------- Progress bar / seek ----------
-        // A thin bar running along the top edge of the controls pill.
-        // Dragging (or a single click/tap) anywhere on it seeks to that
-        // point in the track. While the server round trip for the seek is
-        // in flight, the bar is driven purely from the local drag position
-        // so it never jumps or lags behind the finger/cursor.
-        const progressTrack = document.getElementById('progress-track');
-        const progressFill = document.getElementById('progress-fill');
-        const progressThumb = document.getElementById('progress-thumb');
+        // ---------- Progress ring / seek ----------
+        // A ring that traces the whole rounded-rect perimeter of the
+        // controls pill, built from an SVG path so filling it is just a
+        // stroke-dasharray on a path with a known total length. Dragging
+        // (or a single click/tap) anywhere along the ring seeks to that
+        // point in the track; while a seek round trip is in flight the
+        // ring is driven purely from the local drag position.
+        const ringSvg = document.getElementById('progress-ring');
+        const ringGroup = document.getElementById('progress-ring-group');
+        const ringBg = document.getElementById('progress-track-bg');
+        const ringFill = document.getElementById('progress-track-fill');
+        const ringHit = document.getElementById('progress-hit');
+        const ringThumb = document.getElementById('progress-thumb');
+        const controlsBarEl = document.getElementById('controls-bar');
+
+        const RING_MARGIN = 6; // inset from the pill's outer edge
+        const RING_RADIUS = 34; // corner radius of the traced path
+        let ringTotalLength = 0;
+        let ringSamples = [];
+        let lastRingRatio = -1;
+
+        function buildRingPath(w, h, r) {
+            r = Math.max(0, Math.min(r, w / 2, h / 2));
+            return `M ${w / 2} 0 L ${w - r} 0 A ${r} ${r} 0 0 1 ${w} ${r} ` +
+                   `L ${w} ${h - r} A ${r} ${r} 0 0 1 ${w - r} ${h} ` +
+                   `L ${r} ${h} A ${r} ${r} 0 0 1 0 ${h - r} ` +
+                   `L 0 ${r} A ${r} ${r} 0 0 1 ${r} 0 Z`;
+        }
+
+        function buildRingSamples() {
+            ringSamples = [];
+            if (!ringTotalLength) return;
+            const STEPS = 96;
+            for (let i = 0; i <= STEPS; i++) {
+                const len = (i / STEPS) * ringTotalLength;
+                const pt = ringFill.getPointAtLength(len);
+                ringSamples.push({ x: pt.x, y: pt.y, len: len });
+            }
+        }
+
+        function layoutRing() {
+            const w = controlsBarEl.clientWidth;
+            const h = controlsBarEl.clientHeight;
+            if (!w || !h) return;
+            ringSvg.setAttribute('width', w);
+            ringSvg.setAttribute('height', h);
+            const pw = Math.max(1, w - RING_MARGIN * 2);
+            const ph = Math.max(1, h - RING_MARGIN * 2);
+            const d = buildRingPath(pw, ph, RING_RADIUS);
+            ringBg.setAttribute('d', d);
+            ringFill.setAttribute('d', d);
+            ringHit.setAttribute('d', d);
+            ringGroup.setAttribute('transform', `translate(${RING_MARGIN}, ${RING_MARGIN})`);
+            ringTotalLength = ringFill.getTotalLength();
+            buildRingSamples();
+            lastRingRatio = -1;
+            setProgressVisual(isSeeking ? seekPositionMs / (trackDurationMs || 1) : (trackDurationMs ? currentDisplayRatio() : 0));
+        }
+
+        function currentDisplayRatio() {
+            const progress = isPlaying ? serverProgress + (performance.now() - serverTimestamp) : serverProgress;
+            return trackDurationMs > 0 ? progress / trackDurationMs : 0;
+        }
+
+        if (window.ResizeObserver) {
+            new ResizeObserver(() => layoutRing()).observe(controlsBarEl);
+        } else {
+            window.addEventListener('resize', layoutRing);
+        }
 
         function setProgressVisual(ratio) {
-            const pct = Math.min(100, Math.max(0, ratio * 100));
-            progressFill.style.width = pct + '%';
-            progressThumb.style.left = pct + '%';
+            ratio = Math.min(1, Math.max(0, ratio || 0));
+            // Skip sub-pixel-scale updates - avoids doing path geometry
+            // math and DOM writes every single animation frame for a
+            // change nobody could see.
+            if (Math.abs(ratio - lastRingRatio) < 0.0006) return;
+            lastRingRatio = ratio;
+            if (!ringTotalLength) return;
+            const filledLen = ratio * ringTotalLength;
+            ringFill.setAttribute('stroke-dasharray', `${filledLen} ${ringTotalLength}`);
+            const pt = ringFill.getPointAtLength(filledLen);
+            ringThumb.setAttribute('cx', pt.x);
+            ringThumb.setAttribute('cy', pt.y);
         }
 
-        function ratioFromEvent(e) {
-            const rect = progressTrack.getBoundingClientRect();
+        function ratioFromLocalPoint(x, y) {
+            if (!ringSamples.length) return 0;
+            let bestIdx = 0, bestDist = Infinity;
+            for (let i = 0; i < ringSamples.length; i++) {
+                const s = ringSamples[i];
+                const dx = s.x - x, dy = s.y - y;
+                const dist = dx * dx + dy * dy;
+                if (dist < bestDist) { bestDist = dist; bestIdx = i; }
+            }
+            // Refine locally between the neighbouring samples for a
+            // smoother, more precise hit point than the coarse grid alone.
+            const lastIdx = ringSamples.length - 1;
+            const lo = Math.max(0, bestIdx - 1), hi = Math.min(lastIdx, bestIdx + 1);
+            let bestLen = ringSamples[bestIdx].len;
+            const REFINE = 16;
+            for (let i = 0; i <= REFINE; i++) {
+                const len = ringSamples[lo].len + (ringSamples[hi].len - ringSamples[lo].len) * (i / REFINE);
+                const pt = ringFill.getPointAtLength(len);
+                const dx = pt.x - x, dy = pt.y - y;
+                const dist = dx * dx + dy * dy;
+                if (dist < bestDist) { bestDist = dist; bestLen = len; }
+            }
+            return ringTotalLength > 0 ? bestLen / ringTotalLength : 0;
+        }
+
+        function ringLocalPointFromEvent(e) {
+            const rect = ringSvg.getBoundingClientRect();
             const clientX = e.touches && e.touches.length ? e.touches[0].clientX : e.clientX;
-            const x = clientX - rect.left;
-            return Math.min(1, Math.max(0, rect.width > 0 ? x / rect.width : 0));
+            const clientY = e.touches && e.touches.length ? e.touches[0].clientY : e.clientY;
+            return { x: clientX - rect.left - RING_MARGIN, y: clientY - rect.top - RING_MARGIN };
         }
 
         function updateSeekFromEvent(e) {
             if (!trackDurationMs) return;
-            const ratio = ratioFromEvent(e);
+            const p = ringLocalPointFromEvent(e);
+            const ratio = ratioFromLocalPoint(p.x, p.y);
             setProgressVisual(ratio);
             seekPositionMs = Math.round(ratio * trackDurationMs);
         }
@@ -681,7 +809,10 @@ HTML_TEMPLATE = """
         function startSeek(e) {
             if (!trackDurationMs) return;
             isSeeking = true;
-            progressTrack.classList.add('seeking');
+            ringSvg.classList.add('seeking');
+            if (e.pointerId != null && ringHit.setPointerCapture) {
+                try { ringHit.setPointerCapture(e.pointerId); } catch (err) {}
+            }
             updateSeekFromEvent(e);
             e.preventDefault();
         }
@@ -689,7 +820,7 @@ HTML_TEMPLATE = """
         function endSeek() {
             if (!isSeeking) return;
             isSeeking = false;
-            progressTrack.classList.remove('seeking');
+            ringSvg.classList.remove('seeking');
             serverProgress = seekPositionMs;
             serverTimestamp = performance.now();
             sendSeek(seekPositionMs);
@@ -709,12 +840,19 @@ HTML_TEMPLATE = """
             pollServer(true);
         }
 
-        progressTrack.addEventListener('mousedown', startSeek);
-        progressTrack.addEventListener('touchstart', startSeek, { passive: false });
-        window.addEventListener('mousemove', (e) => { if (isSeeking) updateSeekFromEvent(e); });
-        window.addEventListener('touchmove', (e) => { if (isSeeking) { updateSeekFromEvent(e); e.preventDefault(); } }, { passive: false });
-        window.addEventListener('mouseup', endSeek);
-        window.addEventListener('touchend', endSeek);
+        if (window.PointerEvent) {
+            ringHit.addEventListener('pointerdown', startSeek);
+            ringHit.addEventListener('pointermove', (e) => { if (isSeeking) updateSeekFromEvent(e); });
+            ringHit.addEventListener('pointerup', endSeek);
+            ringHit.addEventListener('pointercancel', endSeek);
+        } else {
+            ringHit.addEventListener('mousedown', startSeek);
+            ringHit.addEventListener('touchstart', startSeek, { passive: false });
+            window.addEventListener('mousemove', (e) => { if (isSeeking) updateSeekFromEvent(e); });
+            window.addEventListener('touchmove', (e) => { if (isSeeking) { updateSeekFromEvent(e); e.preventDefault(); } }, { passive: false });
+            window.addEventListener('mouseup', endSeek);
+            window.addEventListener('touchend', endSeek);
+        }
         window.addEventListener('touchcancel', endSeek);
 
         // ---------- Polling (guarded against overlap / out-of-order) ----------
@@ -754,8 +892,16 @@ HTML_TEMPLATE = """
                     }
                 }
 
-                if (effectiveIsPlaying && data.trackId) {
-                    isPlaying = true;
+                if (data.trackId) {
+                    // Whether it's actually playing or just paused-but-
+                    // loaded, a track being present is what matters for
+                    // initializing the screen: background color, lyrics
+                    // and title all need to reflect it either way. This
+                    // runs the same regardless of play state so that
+                    // connecting (or refreshing) while a song is paused
+                    // shows that song immediately instead of waiting for
+                    // playback to start.
+                    isPlaying = !!effectiveIsPlaying;
                     if (!isSeeking) {
                         serverProgress = data.progressMs;
                         serverTimestamp = performance.now() - networkLatency;
@@ -767,8 +913,13 @@ HTML_TEMPLATE = """
                     if (cachedTrackId !== data.trackId) {
                         cachedTrackId = data.trackId;
                         parsedLines = data.lines || [];
+                        // Land straight on whatever line is current for
+                        // this track's actual progress, instead of -2
+                        // (which would blank the screen and wait for the
+                        // next progress tick to pick the right line -
+                        // exactly the "nothing shows until playback
+                        // starts" symptom).
                         lastActiveIndex = -2;
-
                         applyLines('', '', '');
 
                         if (data.albumArt) {
@@ -788,21 +939,25 @@ HTML_TEMPLATE = """
                         } else {
                             document.body.style.backgroundColor = '#121212';
                         }
+
+                        // If we're not actually playing yet (e.g. the
+                        // track was paused when we connected), still show
+                        // the lyric line that matches the current saved
+                        // position right away rather than waiting for the
+                        // animation loop's isPlaying-gated update.
+                        if (!isPlaying && parsedLines.length > 0) {
+                            let activeIndex = -1;
+                            for (let i = 0; i < parsedLines.length; i++) {
+                                if (parsedLines[i].startTimeMs <= data.progressMs) activeIndex = i;
+                                else break;
+                            }
+                            lastActiveIndex = activeIndex;
+                            const prevText = activeIndex > 0 ? parsedLines[activeIndex - 1].words : "";
+                            const activeText = activeIndex >= 0 ? parsedLines[activeIndex].words : "";
+                            const nextText = activeIndex + 1 < parsedLines.length ? parsedLines[activeIndex + 1].words : "";
+                            applyLines(prevText, activeText, nextText);
+                        }
                     }
-                } else if (data.trackId) {
-                    // Paused, but a track is still loaded - freeze the
-                    // lyrics on screen exactly as they are (matches how
-                    // Spotify's own lyrics view behaves on pause) instead
-                    // of blanking the screen.
-                    isPlaying = false;
-                    if (!isSeeking) {
-                        serverProgress = data.progressMs;
-                        serverTimestamp = performance.now() - networkLatency;
-                    }
-                    trackDurationMs = data.durationMs || 0;
-                    updatePlayPauseIcon();
-                    setTitle(data.title, data.artist);
-                    cachedTrackId = data.trackId;
                 } else {
                     // Nothing loaded at all.
                     isPlaying = false;
@@ -827,18 +982,25 @@ HTML_TEMPLATE = """
             }
         }
 
+        layoutRing();
         setInterval(() => pollServer(false), 700);
         pollServer(true);
 
+        let ringFrameCount = 0;
         function animationLoop() {
             const currentProgress = isPlaying
                 ? serverProgress + (performance.now() - serverTimestamp)
                 : serverProgress;
 
-            // Drive the progress bar every frame for a perfectly smooth
-            // sweep, except while the user is actively dragging it - then
-            // their own touch/drag position is the source of truth.
-            if (!isSeeking && trackDurationMs > 0) {
+            // Drive the progress ring smoothly, except while the user is
+            // actively dragging it (their own drag position is the source
+            // of truth then). Path geometry math (getPointAtLength) is
+            // real work, so it only runs a few times a second - at that
+            // rate the sweep still looks perfectly continuous but costs a
+            // fraction of doing it every single animation frame, which
+            // matters on the underpowered head units this runs on.
+            ringFrameCount++;
+            if (!isSeeking && trackDurationMs > 0 && ringFrameCount % 3 === 0) {
                 setProgressVisual(currentProgress / trackDurationMs);
             }
 
@@ -1167,9 +1329,15 @@ def now_playing():
     if not token:
         return jsonify({"isPlaying": False, "error": "Token missing"})
 
+    # /v1/me/player (rather than /v1/me/player/currently-playing) is used
+    # here because it reports the full playback state tied to the active
+    # device - including a track that's loaded but paused - as long as a
+    # device session exists at all. That's what lets the very first poll
+    # right after connecting show whatever track was already loaded
+    # (playing or paused) instead of staying blank until a new song starts.
     try:
         player_res = requests.get(
-            "https://api.spotify.com/v1/me/player/currently-playing",
+            "https://api.spotify.com/v1/me/player",
             headers={"Authorization": f"Bearer {token}"},
             timeout=4
         )
@@ -1182,6 +1350,9 @@ def now_playing():
     try:
         player = player_res.json()
     except Exception:
+        return jsonify({"isPlaying": False, "trackId": None})
+
+    if not player:
         return jsonify({"isPlaying": False, "trackId": None})
 
     item = player.get('item') or {}
