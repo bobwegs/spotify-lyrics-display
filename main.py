@@ -12,7 +12,7 @@ app.secret_key = "super_secret_car_lyrics_key"
 # Tiny silent looping mp4 used as an iOS "no-sleep" fallback (Wake Lock API
 # isn't available on iOS Safari / older iOS versions). Generated locally,
 # 2x2px, ~1s, silent audio track so autoplay-muted rules are happy.
-NOSLEEP_VIDEO_B64 = "AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAAIZnJlZQAAAwJtZGF03gIATGF2YzYxLjE5LjEwMQACMEAOAAACrQYF//+p3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE2NCByMzEwOCAzMWUxOWY5IC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAyMyAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVmPTMgZGVibG9jaz0xOjA6MCBhbmFseXNlPTB4MzoweDExMyBtZT1oZXggc3VibWU9NyBwc3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MSA4eDhkY3Q9MSBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0tMiB0aHJlYWRzPTEgbG9va2FoZWFkX3RocmVhZHM9MSBzbGljZWRfdGhyZWFkcz0wIG5yPTAgZGVjaW1hdGU9MSBpbnRlcmxhY2VkPTAgYmx1cmF5X2NvbXBhdD0wIGNvbnN0cmFpbmVkX2ludHJhPTAgYmZyYW1lcz0zIGJfcHlyYW1pZD0yIGJfYWRhcHQ9MSBiX2JpYXM9MCBkaXJlY3Q9MSB3ZWlnaHRiPTEgb3Blbl9nb3A9MCB3ZWlnaHRwPTIga2V5aW50PTI1MCBrZXlpbnRfbWluPTEgc2NlbmVjdXQ9NDAgaW50cmFfcmVmcmVzaD0wIHJjX2xvb2thaGVhZD00MCByYz1jcmYgbWJ0cmVlPTEgY3JmPTIzLjAgcWNvbXA9MC42MCBxcG1pbj0wIHFwbWF4PTY5IHFwc3RlcD00IGlwX3JhdGlvPTEuNDAgYXE9MToxLjAwAIAAAAAQZYiEABX//vfJ78Cm69vfgQEYIAcBGCAHARggBwEYIAcBGCAHARggBwEYIAcBGCAHAAAFg21vb3YAAABsbXZoZAAAAAAAAAAAAAAAAAAAA+gAAAPoAAEAAAEAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMAAAJBdHJhawAAAFx0a2hkAAAAAwAAAAAAAAAAAAAAAQAAAAAAAAPoAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAQAAAAAACAAAAAgAAAAAAJGVkdHMAAAAcZWxzdAAAAAAAAAABAAAD6AAAAAAAAQAAAAABuW1kaWEAAAAgbWRoZAAAAAAAAAAAAAAAAAAAQAAAAEAAVcQAAAAAAC1oZGxyAAAAAAAAAAB2aWRlAAAAAAAAAAAAAAAAVmlkZW9IYW5kbGVyAAAAAWRtaW5mAAAAFHZtaGQAAAABAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAAEkc3RibAAAAMBzdHNkAAAAAAAAAAEAAACwYXZjMQAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAACAAIASAAAAEgAAAAAAAAAARVMYXZjNjEuMTkuMTAxIGxpYngyNjQAAAAAAAAAAAAAABj//wAAADZhdmNDAWQACv/hABlnZAAKrNlfiIjARAAAAwAEAAADAAg8SJZYAQAGaOvjyyLA/fj4AAAAABBwYXNwAAAAAQAAAAEAAAAUYnRydAAAAAAAABYoAAAAAAAAABhzdHRzAAAAAAAAAAEAAAABAABAAAAAABxzdHNjAAAAAAAAAAEAAAABAAAAAQAAAAEAAAAUc3RzegAAAAAAAALFAAAAAQAAABRzdGNvAAAAAAAAAAEAAABFAAACbXRyYWsAAABcdGtoZAAAAAMAAAAAAAAAAAAAAAIAAAAAAAAD6AAAAAAAAAAAAAAAAQEAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAA+gAAAQAAAEAAAAAAeVtZGlhAAAAIG1kaGQAAAAAAAAAAAAAAAAAAB9AAAAjQFXEAAAAAAAtaGRscgAAAAAAAAAAc291bgAAAAAAAAAAAAAAAFNvdW5kSGFuZGxlcgAAAAGQbWluZgAAABBzbWhkAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAAFUc3RibAAAAH5zdHNkAAAAAAAAAAEAAABubXA0YQAAAAAAAAABAAAAAAAAAAAAAQAQAAAAAB9AAAAAAAA2ZXNkcwAAAAADgICAJQACAASAgIAXQBUAAAAAALuAAAABdwWAgIAFFYhW5QAGgICAAQIAAAAUYnRydAAAAAAAALuAAAABdwAAACBzdHRzAAAAAAAAAAIAAAAIAAAEAAAAAAEAAANAAAAAKHN0c2MAAAAAAAAAAgAAAAEAAAABAAAAAQAAAAIAAAAIAAAAAQAAADhzdHN6AAAAAAAAAAAAAAAJAAAAFQAAAAQAAAAEAAAABAAAAAQAAAAEAAAABAAAAAQAAAAEAAAAGHN0Y28AAAAAAAAAAgAAADAAAAMKAAAAGnNncGQBAAAAcm9sbAAAAAIAAAAB//8AAAAcc2JncAAAAAByb2xsAAAAAQAAAAkAAAABAAAAYXVkdGEAAABZbWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwAAAAAAAAAAAAAAAAsaWxzdAAAACSpdG9vAAAAHGRhdGEAAAABAAAAAExhdmY2MS43LjEwMw=="
+NOSLEEP_VIDEO_B64 = "AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAAIZnJlZQAAAwJtZGF03gIATGF2YzYxLjE5LjEwMQACMEAOAAACrQYF//+p3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE2NCByMzEwOCAzMWUxOWY5IC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAyMyAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVmPTMgZGVibG9jaz0xOjA6MCBhbmFseXNlPTB4MzoweDExMyBtZT1oZXggc3VibWU9NyBwc3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MSA4eDhkY3Q9MSBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0tMiB0aHJlYWRzPTEgbG9va2FoZWFkX3RocmVhZHM9MSBzbGljZWRfdGhyZWFkcz0wIG5yPTAgZGVjaW1hdGU9MSBpbnRlcmxhY2VkPTAgYmx1cmF5X2NvbXBhdD0wIGNvbnN0cmFpbmVkX2ludHJhPTAgYmZyYW1lcz0zIGJfcHlyYW1pZD0yIGJfYWRhcHQ9MSBiX2JpYXM9MCBkaXJlY3Q9MSB3ZWlnaHRiPTEgb3Blbl9nb3A9MCB3ZWlnaHRwPTIga2V5aW50PTI1MCBrZXlpbnRfbWluPTEgc2NlbmVjdXQ9NDAgaW50cmFfcmVmcmVzaD0wIHJjX2xvb2thaGVhZD00MCByYz1jcmYgbWJ0cmVlPTEgY3JmPTIzLjAgcWNvbXA9MC42MCBxcG1pbj0wIHFwbWF4PTY5IHFwc3RlcD00IGlwX3JhdGlvPTEuNDAgYXE9MToxLjAwAIAAAAAQZYiEABX//vfJ78Cm69vfgQEYIAcBGCAHARggBwEYIAcBGCAHARggBwEYIAcBGCAHAAAFg21vb3YAAABsbXZoZAAAAAAAAAAAAAAAAAAAA+gAAAPoAAEAAAEAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMAAAJBdHJhawAAAFx0a2hkAAAAAwAAAAAAAAAAAAAAAQAAAAAAAAPoAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAQAAAAAACAAAAAgAAAAAAJGVkdHMAAAAcZWxzdAAAAAAAAAABAAAD6AAAAAAAAQAAAAABuW1kaWEAAAAgbWRoZAAAAAAAAAAAAAAAAAAAQAAAAEAAVcQAAAAAAC1oZGxyAAAAAAAAAAB2aWRlAAAAAAAAAAAAAAAAVmlkZW9IYW5kbGVyAAAAAWRtaW5mAAAAFHZtaGQAAAABAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAAEkc3RibAAAAMBzdHNkAAAAAAAAAAEAAACwYXZjMQAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAACAAIASAAAAEgAAAAAAAAAARVMYXZjNjEuMTkuMTAxIGxpYngyNjQAAAAAAAAAAAAAABj//wAAADZhdmNDAWQACv/hABlnZAAKrNlfiIjARAAAAwAEAAADAAg8SJZYAQAGaOvjyyLA/fj4AAAAABBwYXNwAAAAAQAAAAEAAAAUYnRydAAAAAAAABYoAAAAAAAAABhzdHRzAAAAAAAAAAEAAAABAABAAAAAABxzdHNjAAAAAAAAAAEAAAABAAAAAQAAAAEAAAAUc3RzegAAAAAAAALFAAAAAQAAABRzdGNvAAAAAAAAAAEAAABFAAACbXRyYWsAAABcdGtoZAAAAAMAAAAAAAAAAAAAAAIAAAAAAAAD6AAAAAAAAAAAAAAAAQEAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAA+gAAAQAAAEAAAAAAeVtZGlhAAAAIG1kaGQAAAAAAAAAAAAAAAAAAB9AAAAjQFXEAAAAAAAtaGRscgAAAAAAAAAAc291bgAAAAAAAAAAAAAAAFNvdW5kSGFuZGxlcgAAAAGQbWluZgAAABBzbWhkAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAAFUc3RibAAAAH5zdHNkAAAAAAAAAAEAAABubXA0YQAAAAAAAAABAAAAAAAAAAAAAQAQAAAAAB9AAAAAAAA2ZXNkcwAAAAADgICAJQACAASAgIAXQBUAAAAAALuAAAABdwWAgIAFFYhW5QAGgICAAQIAAAAUYnRydAAAAAAAALuAAAABdwAAACBzdHRzAAAAAAAAAAIAAAAIAAAEAAAAAAEAAANAAAAAKHN0c2MAAAAAAAAAAgAAAAEAAAABAAAAAQAAAAIAAAAIAAAAAQAAADhzdHN6AAAAAAAAAAAAAAAJAAAAFQAAAAQAAAAEAAAABAAAAAQAAAAEAAAABAAAAAQAAAAEAAAAGHN0Y28AAAAAAAAAAgAAADAAAAMKAAAAGnNncGQBAAAAcm9sbAAAAAIAAAAB//8AAAAcc2JncAAAAAByb2xsAAAAAQAAAAkAAAABAAAAYXVkdGEAAABZbWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwAAAAAAAAAAAAAAAAsaWxzdAAAACSpdG9vAAAAHGRhdGEAAAABAAAAAExhdmY2MS43LjEwMw=="
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -259,6 +259,22 @@ HTML_TEMPLATE = """
             animation: marquee-scroll var(--marquee-duration, 6s) linear infinite;
         }
 
+        /* Song title vs. artist: two distinct weights/opacities instead
+           of a plain em-dash separator, so the pair reads as "title, then
+           who it's by" rather than one flat run of text. */
+        .tt-song {
+            color: rgba(255, 255, 255, 0.95);
+            font-weight: 800;
+        }
+        .tt-sep {
+            color: rgba(255, 255, 255, 0.3);
+            font-weight: 600;
+        }
+        .tt-artist {
+            color: rgba(255, 255, 255, 0.55);
+            font-weight: 600;
+        }
+
         @keyframes marquee-scroll {
             0%, 10%   { transform: translateX(0); }
             45%, 55%  { transform: translateX(var(--marquee-distance, 0)); }
@@ -349,11 +365,28 @@ HTML_TEMPLATE = """
     <!-- Playback Controls -->
     <div id="controls-bar">
         <svg id="progress-ring" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+                <linearGradient id="ringGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stop-color="#22e06a"></stop>
+                    <stop offset="55%" stop-color="#1DB954"></stop>
+                    <stop offset="100%" stop-color="#149c48"></stop>
+                </linearGradient>
+                <filter id="ringGlow" x="-60%" y="-60%" width="220%" height="220%">
+                    <feGaussianBlur in="SourceGraphic" stdDeviation="2.4" result="blur"></feGaussianBlur>
+                    <feMerge>
+                        <feMergeNode in="blur"></feMergeNode>
+                        <feMergeNode in="SourceGraphic"></feMergeNode>
+                    </feMerge>
+                </filter>
+                <filter id="thumbGlow" x="-150%" y="-150%" width="400%" height="400%">
+                    <feDropShadow dx="0" dy="0" stdDeviation="2.2" flood-color="#1DB954" flood-opacity="0.9"></feDropShadow>
+                </filter>
+            </defs>
             <g id="progress-ring-group">
-                <path id="progress-track-bg" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="3" stroke-linecap="round"></path>
-                <path id="progress-track-fill" fill="none" stroke="#1DB954" stroke-width="3" stroke-linecap="round"></path>
+                <path id="progress-track-bg" fill="none" stroke="rgba(255,255,255,0.16)" stroke-width="3" stroke-linecap="round"></path>
+                <path id="progress-track-fill" fill="none" stroke="url(#ringGradient)" stroke-width="3.5" stroke-linecap="round" filter="url(#ringGlow)"></path>
                 <path id="progress-hit" fill="none" stroke="rgba(0,0,0,0.01)" stroke-width="26" stroke-linecap="round"></path>
-                <circle id="progress-thumb" r="5.5" fill="#fff"></circle>
+                <circle id="progress-thumb" r="5.5" fill="#fff" filter="url(#thumbGlow)"></circle>
             </g>
         </svg>
         <div id="now-playing-title"><span id="now-playing-title-inner"></span></div>
@@ -508,6 +541,18 @@ HTML_TEMPLATE = """
         const ADJACENT_MAX = 40, ADJACENT_MIN = 9;
         const ACTIVE_WEIGHT = 900, ADJACENT_WEIGHT = 600;
         const REF_SIZE = 100;
+        // Canvas measureText() has no idea the real element renders with
+        // CSS letter-spacing - it measures raw glyph advances only. Left
+        // uncorrected, the font size solved from that measurement is
+        // systematically too large, so the real rendered line ends up
+        // wider than its box and gets clipped with "...". Letter-spacing
+        // in CSS is a fixed px add-on per character (it does not scale
+        // with font-size), so it's subtracted from the available width
+        // up front, before solving for size, rather than baked into the
+        // canvas measurement itself.
+        const LYRIC_LETTER_SPACING = 1.5; // px, matches body's letter-spacing
+        const LYRIC_HPAD = 10;            // px, matches .lyric-inner's own padding
+        const LYRIC_SAFETY = 8;           // px, extra margin against rounding
 
         const measureCanvas = document.createElement('canvas');
         const measureCtx = measureCanvas.getContext('2d');
@@ -531,8 +576,15 @@ HTML_TEMPLATE = """
             if (!text) return maxSize;
 
             const weight = isActive ? ACTIVE_WEIGHT : ADJACENT_WEIGHT;
-            const maxWidth = containerEl.clientWidth * 0.94;
             const refWidth = measureWidthAtRef(text, weight);
+
+            // Available width minus the inner element's own padding and
+            // the total letter-spacing add-on for this text's character
+            // count (a fixed px amount, independent of font size), plus a
+            // small safety margin - see LYRIC_* constants above.
+            const spacingExtra = text.length * LYRIC_LETTER_SPACING;
+            const rawMaxWidth = containerEl.clientWidth * 0.94 - LYRIC_HPAD * 2 - spacingExtra - LYRIC_SAFETY;
+            const maxWidth = Math.max(1, rawMaxWidth);
             let size = (maxWidth / refWidth) * REF_SIZE;
 
             // Cap by the vertical room one line is actually allotted, so a
@@ -626,11 +678,14 @@ HTML_TEMPLATE = """
         const MARQUEE_TRAVEL_FRACTION = 0.35; // matches the keyframe % below
         let currentTitleText = '';
 
+        const TITLE_LETTER_SPACING = 0.2; // px, matches #now-playing-title-inner's letter-spacing
+
         function computeTitleFontSize(text) {
             if (!text) return TITLE_MAX;
             measureCtx.font = `700 ${REF_SIZE}px 'Montserrat', sans-serif`;
             const refWidth = measureCtx.measureText(text).width || 1;
-            const maxWidth = titleEl.clientWidth * 0.98;
+            const spacingExtra = text.length * TITLE_LETTER_SPACING;
+            const maxWidth = Math.max(1, titleEl.clientWidth * 0.98 - spacingExtra);
             let size = (maxWidth / refWidth) * REF_SIZE;
             size = Math.min(size, TITLE_MAX);
             size = Math.max(size, TITLE_MIN);
@@ -671,13 +726,34 @@ HTML_TEMPLATE = """
             applyTitleLayout();
         }
 
+        function escapeHtml(s) {
+            return String(s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        // Song title and artist are rendered as two distinctly-weighted/
+        // -colored spans (title bright & bold, artist dimmer & lighter)
+        // joined by a small centered dot, instead of a plain
+        // "title — artist" string. Measurement/marquee logic still works
+        // off a plain-text equivalent (same length, so width math is
+        // unaffected by the markup).
         function setTitle(title, artist) {
-            const text = artist ? `${title} — ${artist}` : title;
+            const text = artist ? `${title} • ${artist}` : title;
             if (text === currentTitleText) return;
             currentTitleText = text;
             titleInnerEl.classList.remove('marquee');
             titleEl.classList.remove('marquee-active');
-            titleInnerEl.textContent = text;
+            if (artist) {
+                titleInnerEl.innerHTML =
+                    `<span class="tt-song">${escapeHtml(title)}</span>` +
+                    `<span class="tt-sep">&nbsp;&bull;&nbsp;</span>` +
+                    `<span class="tt-artist">${escapeHtml(artist)}</span>`;
+            } else {
+                titleInnerEl.textContent = title;
+            }
             applyTitleLayout();
         }
 
@@ -1238,6 +1314,29 @@ def split_long_lines(lines, max_chars=MAX_LINE_CHARS):
 
     return result
 
+# Lyrics for a given track never change, but /api/now-playing is polled
+# every 700ms and also re-hit immediately after every control tap (play,
+# pause, seek, next, previous) so the UI can refresh right away. Without a
+# cache, every single one of those calls was doing a live network round
+# trip to LRCLIB - which is what actually caused the "lag when pausing /
+# using controls" (not client-side rendering). The cache only lets LRCLIB
+# get hit once per track, keyed by Spotify's track id.
+LYRICS_CACHE = {}
+LYRICS_CACHE_MAX = 100
+
+def get_cached_lyrics(track_id, track_name, artist_name):
+    if track_id and track_id in LYRICS_CACHE:
+        return LYRICS_CACHE[track_id]
+
+    lines = fetch_synced_lyrics(track_name, artist_name)
+
+    if track_id:
+        if len(LYRICS_CACHE) >= LYRICS_CACHE_MAX:
+            LYRICS_CACHE.pop(next(iter(LYRICS_CACHE)))
+        LYRICS_CACHE[track_id] = lines
+
+    return lines
+
 def fetch_synced_lyrics(track_name, artist_name):
     cleaned_name = re.sub(
         r'\s*[\(\[].*?(feat\.|ft\.|remaster|version|mix).*?[\)\]]',
@@ -1368,7 +1467,7 @@ def now_playing():
     images = album.get('images') or []
     album_art = images[0].get('url', '') if images and isinstance(images[0], dict) else ""
 
-    lines = fetch_synced_lyrics(track_name, artist_name)
+    lines = get_cached_lyrics(track_id, track_name, artist_name)
     duration_ms = item.get('duration_ms') or 0
 
     return jsonify({
