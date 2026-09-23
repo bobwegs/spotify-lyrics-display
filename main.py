@@ -248,15 +248,34 @@ HTML_TEMPLATE = """
             white-space: nowrap;
             letter-spacing: 0.2px;
             line-height: 1;
-            max-width: 100%;
-            overflow: hidden;
-            text-overflow: ellipsis;
             display: inline-block;
             flex-shrink: 0;
         }
 
+        /* Static (non-marquee) state: the text already fits inside
+           #now-playing-title (which itself clips via overflow:hidden), so
+           a max-width/ellipsis pair here is only a last-resort safety net
+           for a stray sub-pixel overflow, never the normal case. */
+        #now-playing-title-inner:not(.marquee) {
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Marquee state: the clipping viewport is the outer
+           #now-playing-title element. The inner span must NOT also clip
+           its own overflow or truncate with an ellipsis - doing both at
+           once is what previously made the title look like it was
+           simultaneously "stuck" (clipped) and "juddering" (the transform
+           animating underneath content that was already cut off). Here
+           the inner span is left free to be exactly as wide as its full
+           text and simply slides left across the fixed-width viewport. */
         #now-playing-title-inner.marquee {
+            max-width: none;
+            overflow: visible;
+            text-overflow: clip;
             animation: marquee-scroll var(--marquee-duration, 6s) linear infinite;
+            will-change: transform;
         }
 
         /* Song title vs. artist: two distinct weights/opacities instead
@@ -275,10 +294,15 @@ HTML_TEMPLATE = """
             font-weight: 600;
         }
 
+        /* One continuous left-moving pass across the whole hidden text,
+           not a there-and-back oscillation: hold briefly at the start so
+           the beginning is readable, travel once all the way to fully
+           reveal the tail of the text, hold briefly there, then loop
+           (an instant reset, same as any ticker/marquee - not a visible
+           reverse). */
         @keyframes marquee-scroll {
-            0%, 10%   { transform: translateX(0); }
-            45%, 55%  { transform: translateX(var(--marquee-distance, 0)); }
-            90%, 100% { transform: translateX(0); }
+            0%, 6%    { transform: translateX(0); }
+            94%, 100% { transform: translateX(var(--marquee-distance, 0)); }
         }
 
         #controls-row {
@@ -562,7 +586,18 @@ HTML_TEMPLATE = """
 
         function measureWidthAtRef(text, weight) {
             measureCtx.font = `${weight} ${REF_SIZE}px 'Montserrat', sans-serif`;
-            return measureCtx.measureText(text).width || 1;
+            // The real element renders with `text-transform: uppercase`
+            // (inherited from body), but the text handed to measureText()
+            // here is the original mixed/lower-case source string. Capital
+            // glyphs are almost always wider than their lowercase
+            // counterparts, so measuring the raw string systematically
+            // *underestimates* the true rendered width - the size solved
+            // from that measurement then comes out too large and the real
+            // (uppercase) line overflows and gets ellipsis-clipped, even
+            // though the math "checked out" against the wrong string.
+            // Measuring the upper-cased text is what the element actually
+            // paints, so this is the fix, not a refinement.
+            return measureCtx.measureText(text.toUpperCase()).width || 1;
         }
 
         // Every lyric line renders on exactly one physical line, however
@@ -570,22 +605,22 @@ HTML_TEMPLATE = """
         // three lines. Size is picked purely so the whole line's width
         // fits the available space; a one-line height cap keeps very long
         // lines from getting tall enough to clip vertically instead.
+        // Returns both the chosen size and the hard pixel width budget it
+        // was solved against, so callers can also verify against the real
+        // live DOM afterwards (canvas measurement is a very close estimate,
+        // not a guarantee - see fitTextToWidth below).
         function computeFontSize(text, isActive) {
             const maxSize = isActive ? ACTIVE_MAX : ADJACENT_MAX;
             const minSize = isActive ? ACTIVE_MIN : ADJACENT_MIN;
-            if (!text) return maxSize;
+            const spacingExtra = (text || '').length * LYRIC_LETTER_SPACING;
+            const rawMaxWidth = containerEl.clientWidth * 0.92 - LYRIC_HPAD * 2 - spacingExtra - LYRIC_SAFETY;
+            const availWidth = Math.max(1, rawMaxWidth);
+            if (!text) return { size: maxSize, availWidth };
 
             const weight = isActive ? ACTIVE_WEIGHT : ADJACENT_WEIGHT;
             const refWidth = measureWidthAtRef(text, weight);
 
-            // Available width minus the inner element's own padding and
-            // the total letter-spacing add-on for this text's character
-            // count (a fixed px amount, independent of font size), plus a
-            // small safety margin - see LYRIC_* constants above.
-            const spacingExtra = text.length * LYRIC_LETTER_SPACING;
-            const rawMaxWidth = containerEl.clientWidth * 0.94 - LYRIC_HPAD * 2 - spacingExtra - LYRIC_SAFETY;
-            const maxWidth = Math.max(1, rawMaxWidth);
-            let size = (maxWidth / refWidth) * REF_SIZE;
+            let size = (availWidth / refWidth) * REF_SIZE;
 
             // Cap by the vertical room one line is actually allotted, so a
             // short line at max size never grows tall enough to crowd its
@@ -596,7 +631,49 @@ HTML_TEMPLATE = """
 
             size = Math.min(size, maxSize);
             size = Math.max(size, minSize);
-            return Math.round(size);
+            return { size: Math.round(size), availWidth };
+        }
+
+        // Canvas pre-measurement gets very close but isn't pixel-exact
+        // once real font hinting, subpixel rounding and the browser's own
+        // uppercase-transform glyph substitution are all in play. Rather
+        // than trust the estimate blindly (which is what kept producing
+        // the "..." clipping even after correcting for letter-spacing and
+        // case), the actual rendered element is measured right after the
+        // estimate is applied, and nudged down a few times if it still
+        // doesn't fit - a cheap, synchronous, no-extra-frame correction
+        // against ground truth instead of a second formula to get wrong.
+        // minSize is the normal, designed-for readable floor. If the
+        // element still doesn't fit even there (a very long line on a very
+        // narrow screen), it's allowed to keep shrinking past that floor
+        // down to HARD_FLOOR_PX - a small, still-legible size is a much
+        // better outcome than the line being ellipsis-clipped, which is
+        // the exact symptom this whole pass exists to get rid of.
+        const HARD_FLOOR_PX = 7;
+        function fitTextToWidth(el, guessSize, minSize, availWidth) {
+            let size = guessSize;
+            el.style.fontSize = size + 'px';
+            for (let i = 0; i < 6; i++) {
+                const actualWidth = el.scrollWidth;
+                if (actualWidth <= availWidth + 0.5 || size <= minSize) break;
+                const ratio = availWidth / actualWidth;
+                const next = Math.max(minSize, Math.floor(size * ratio * 0.985));
+                if (next >= size) break;
+                size = next;
+                el.style.fontSize = size + 'px';
+            }
+            // Extra passes below the normal floor, only entered if it's
+            // still overflowing there.
+            for (let i = 0; i < 8 && size > HARD_FLOOR_PX; i++) {
+                const actualWidth = el.scrollWidth;
+                if (actualWidth <= availWidth + 0.5) break;
+                const ratio = availWidth / actualWidth;
+                const next = Math.max(HARD_FLOOR_PX, Math.floor(size * ratio * 0.985));
+                if (next >= size) break;
+                size = next;
+                el.style.fontSize = size + 'px';
+            }
+            return size;
         }
 
         // ---------- Coordinated crossfade text swap ----------
@@ -615,20 +692,33 @@ HTML_TEMPLATE = """
             setSlot(slots['next-line'], nextText || '');
         }
 
+        // Sets the text and its font-size together, verifying the real
+        // rendered width against the DOM (not just the canvas estimate)
+        // before the line is ever revealed - all synchronous, so this adds
+        // no extra animation frame / delay versus the old estimate-only
+        // path.
+        function applySizedText(inner, text, isActive) {
+            const { size: guessSize, availWidth } = computeFontSize(text, isActive);
+            inner.textContent = text;
+            if (!text) {
+                inner.style.fontSize = guessSize + 'px';
+                return;
+            }
+            const minSize = isActive ? ACTIVE_MIN : ADJACENT_MIN;
+            fitTextToWidth(inner, guessSize, minSize, availWidth);
+        }
+
         function setSlot(slot, text) {
             const inner = slot.inner;
             if (inner.dataset.text === text) return;
             const hadContent = !!inner.dataset.text;
             inner.dataset.text = text;
 
-            const size = computeFontSize(text, slot.isActive);
-
             clearTimeout(inner._fadeTimer);
             if (!hadContent && !inner.textContent) {
                 // Nothing was showing yet - fade straight in, no need to
                 // fade out first.
-                inner.textContent = text;
-                inner.style.fontSize = size + 'px';
+                applySizedText(inner, text, slot.isActive);
                 requestAnimationFrame(() => {
                     inner.style.opacity = text ? String(slot.opacity) : '0';
                 });
@@ -637,8 +727,7 @@ HTML_TEMPLATE = """
 
             inner.style.opacity = '0';
             inner._fadeTimer = setTimeout(() => {
-                inner.textContent = text;
-                inner.style.fontSize = size + 'px';
+                applySizedText(inner, text, slot.isActive);
                 requestAnimationFrame(() => {
                     inner.style.opacity = text ? String(slot.opacity) : '0';
                 });
@@ -649,7 +738,7 @@ HTML_TEMPLATE = """
             Object.values(slots).forEach(slot => {
                 const text = slot.inner.dataset.text || '';
                 if (!text) return;
-                slot.inner.style.fontSize = computeFontSize(text, slot.isActive) + 'px';
+                applySizedText(slot.inner, text, slot.isActive);
             });
         }
 
@@ -675,51 +764,75 @@ HTML_TEMPLATE = """
         const titleInnerEl = document.getElementById('now-playing-title-inner');
         const TITLE_MAX = 15, TITLE_MIN = 9;
         const MARQUEE_PX_PER_SEC = 38;
-        const MARQUEE_TRAVEL_FRACTION = 0.35; // matches the keyframe % below
+        // Matches the hold/travel split in the marquee-scroll keyframes
+        // below (6%-94% is the travel leg = 88% of one cycle).
+        const MARQUEE_TRAVEL_FRACTION = 0.88;
         let currentTitleText = '';
 
         const TITLE_LETTER_SPACING = 0.2; // px, matches #now-playing-title-inner's letter-spacing
 
-        function computeTitleFontSize(text) {
-            if (!text) return TITLE_MAX;
+        function measureTitleWidthAtRef(text) {
             measureCtx.font = `700 ${REF_SIZE}px 'Montserrat', sans-serif`;
-            const refWidth = measureCtx.measureText(text).width || 1;
-            const spacingExtra = text.length * TITLE_LETTER_SPACING;
-            const maxWidth = Math.max(1, titleEl.clientWidth * 0.98 - spacingExtra);
-            let size = (maxWidth / refWidth) * REF_SIZE;
-            size = Math.min(size, TITLE_MAX);
-            size = Math.max(size, TITLE_MIN);
-            return Math.round(size * 10) / 10;
+            // Same fix as the lyric lines: the title also renders
+            // uppercase (inherited from body), so it must be measured
+            // uppercase too, or the solved size comes out too big and the
+            // real line overflows.
+            return measureCtx.measureText(text.toUpperCase()).width || 1;
         }
 
+        function computeTitleFontSize(text) {
+            const availWidth = Math.max(1, titleEl.clientWidth * 0.97);
+            if (!text) return { size: TITLE_MAX, availWidth };
+            const refWidth = measureTitleWidthAtRef(text);
+            const spacingExtra = text.length * TITLE_LETTER_SPACING;
+            const usableWidth = Math.max(1, availWidth - spacingExtra);
+            let size = (usableWidth / refWidth) * REF_SIZE;
+            size = Math.min(size, TITLE_MAX);
+            size = Math.max(size, TITLE_MIN);
+            return { size: Math.round(size * 10) / 10, availWidth };
+        }
+
+        // Fully synchronous, no requestAnimationFrame round trip: the
+        // canvas estimate is applied, then immediately checked and
+        // corrected against the real live element (scrollWidth reflects
+        // full un-clipped content width even while overflow:hidden hides
+        // the excess), all before this function returns. That is what
+        // keeps title changes feeling instant rather than adding a frame
+        // of visible delay.
         function applyTitleLayout() {
             if (!currentTitleText) return;
-            titleInnerEl.style.fontSize = computeTitleFontSize(currentTitleText) + 'px';
+            titleInnerEl.classList.remove('marquee');
+            titleEl.classList.remove('marquee-active');
+            titleInnerEl.style.removeProperty('--marquee-distance');
 
-            // Measure the actual rendered box after the size lands (canvas
-            // measurement at a reference size isn't pixel-exact once
-            // letter-spacing/uppercase text-transform are involved), then
-            // decide whether a marquee is needed.
-            requestAnimationFrame(() => {
-                if (!currentTitleText) return;
-                const containerWidth = titleEl.clientWidth;
-                const textWidth = titleInnerEl.scrollWidth;
-                const overflow = textWidth - containerWidth;
+            const { size: guessSize, availWidth } = computeTitleFontSize(currentTitleText);
+            let size = guessSize;
+            titleInnerEl.style.fontSize = size + 'px';
+            for (let i = 0; i < 6; i++) {
+                const actualWidth = titleInnerEl.scrollWidth;
+                if (actualWidth <= availWidth + 0.5 || size <= TITLE_MIN) break;
+                const ratio = availWidth / actualWidth;
+                const next = Math.max(TITLE_MIN, Math.round(size * ratio * 0.985 * 10) / 10);
+                if (next >= size) break;
+                size = next;
+                titleInnerEl.style.fontSize = size + 'px';
+            }
 
-                if (overflow > 2) {
-                    const distance = overflow + 16;
-                    const travelSeconds = distance / MARQUEE_PX_PER_SEC;
-                    const duration = Math.max(4, travelSeconds / MARQUEE_TRAVEL_FRACTION);
-                    titleInnerEl.style.setProperty('--marquee-distance', `-${distance}px`);
-                    titleInnerEl.style.setProperty('--marquee-duration', `${duration.toFixed(2)}s`);
-                    titleEl.classList.add('marquee-active');
-                    titleInnerEl.classList.add('marquee');
-                } else {
-                    titleEl.classList.remove('marquee-active');
-                    titleInnerEl.classList.remove('marquee');
-                    titleInnerEl.style.removeProperty('--marquee-distance');
-                }
-            });
+            // Even at the readable floor size, some titles (very long
+            // "Song (feat. Someone Else) • Artist" strings especially)
+            // still don't fit the pill - that's what the marquee is for,
+            // and it needs the real overflow amount, not the canvas
+            // estimate, to travel exactly as far as the text is long.
+            const overflow = titleInnerEl.scrollWidth - titleEl.clientWidth;
+            if (overflow > 2) {
+                const distance = overflow + 20;
+                const travelSeconds = distance / MARQUEE_PX_PER_SEC;
+                const duration = Math.max(4, travelSeconds / MARQUEE_TRAVEL_FRACTION);
+                titleInnerEl.style.setProperty('--marquee-distance', `-${distance}px`);
+                titleInnerEl.style.setProperty('--marquee-duration', `${duration.toFixed(2)}s`);
+                titleEl.classList.add('marquee-active');
+                titleInnerEl.classList.add('marquee');
+            }
         }
 
         function fitTitle() {
@@ -1256,8 +1369,21 @@ def parse_lrc(lrc_text):
     return lines
 
 def wrap_words(text, max_chars):
-    """Greedy word-wrap a single lyric line into chunks that each fit
-    comfortably on one display line."""
+    """Word-wrap a single lyric line into chunks that each fit comfortably
+    on one display line.
+
+    A naive greedy fill (pack words onto the current chunk until the next
+    one wouldn't fit, then start a new chunk) tends to dump whatever is
+    left over into a final chunk by itself - often just one short word -
+    once the preceding chunks have already eaten most of max_chars. That
+    lone-word chunk then gets its own timed sub-line on screen, which reads
+    as a jarring "just one word" flash. This still greedy-fills first (that
+    part was never the problem), but then rebalances afterwards: any chunk
+    that ended up as a single word gets folded into whichever neighbouring
+    chunk it fits best against, even if that neighbour then runs a bit past
+    max_chars - the client always shrinks font size to fit whatever text
+    actually lands on a line, so a soft, occasional overrun here is far
+    less noticeable than a whole display line holding one word."""
     words = text.split()
     if not words:
         return [text]
@@ -1272,6 +1398,34 @@ def wrap_words(text, max_chars):
             current = w
     if current:
         chunks.append(current)
+    if not chunks:
+        return [text]
+
+    OVERRUN_TOLERANCE = 1.4  # how far past max_chars a merge may push a chunk
+    changed = True
+    while changed and len(chunks) > 1:
+        changed = False
+        for i, chunk in enumerate(chunks):
+            if len(chunk.split()) != 1:
+                continue
+            candidates = []
+            if i > 0:
+                candidates.append((i - 1, len(chunks[i - 1]) + 1 + len(chunk)))
+            if i + 1 < len(chunks):
+                candidates.append((i + 1, len(chunk) + 1 + len(chunks[i + 1])))
+            if not candidates:
+                continue
+            target_i, merged_len = min(candidates, key=lambda c: c[1])
+            if merged_len > max_chars * OVERRUN_TOLERANCE:
+                continue
+            if target_i < i:
+                chunks[target_i] = chunks[target_i] + " " + chunk
+            else:
+                chunks[target_i] = chunk + " " + chunks[target_i]
+            del chunks[i]
+            changed = True
+            break
+
     return chunks or [text]
 
 def split_long_lines(lines, max_chars=MAX_LINE_CHARS):
