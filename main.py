@@ -651,6 +651,23 @@ HTML_TEMPLATE = """
         // the exact symptom this whole pass exists to get rid of.
         const HARD_FLOOR_PX = 7;
         function fitTextToWidth(el, guessSize, minSize, availWidth) {
+            // The element's own stylesheet rule transitions font-size
+            // (so a genuine active<->adjacent size change fades smoothly
+            // instead of snapping). But this loop can write font-size
+            // several times in a row while forcing a synchronous layout
+            // read (el.scrollWidth) between each write - and a layout
+            // read between two style writes is exactly what makes a
+            // browser treat each intermediate value as its own transition
+            // leg, so instead of one clean resize the line visibly
+            // shrinks, overshoots, shrinks again, etc. None of these
+            // intermediate values are meant to be seen - only the final,
+            // settled size is - so the transition is switched off for the
+            // duration of this correction loop and restored right after,
+            // on the next frame once the size has already stopped
+            // changing (so nothing has anything left to animate through).
+            const prevTransition = el.style.transition;
+            el.style.transition = 'none';
+
             let size = guessSize;
             el.style.fontSize = size + 'px';
             for (let i = 0; i < 6; i++) {
@@ -673,6 +690,16 @@ HTML_TEMPLATE = """
                 size = next;
                 el.style.fontSize = size + 'px';
             }
+
+            // Flush the final size so the browser has committed it before
+            // transitions come back on, then hand control of `transition`
+            // back to the stylesheet (not to a hardcoded value) so any
+            // later legitimate change (e.g. this same line swapping from
+            // adjacent to active) still gets the designed fade.
+            void el.offsetHeight;
+            requestAnimationFrame(() => {
+                el.style.transition = prevTransition;
+            });
             return size;
         }
 
