@@ -156,8 +156,8 @@ HTML_TEMPLATE = """
             line-height: 1.15;
             opacity: 0;
             will-change: opacity, font-size;
-            transition: opacity 0.32s cubic-bezier(0.4, 0, 0.2, 1),
-                        font-size 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+                        font-size 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         .adjacent-line .lyric-inner {
@@ -443,6 +443,7 @@ HTML_TEMPLATE = """
         let trackDurationMs = 0;
         let isSeeking = false;
         let seekPositionMs = 0;
+        let seekGraceUntil = 0;
 
         // ---------- Opacity targets per slot ----------
         const OPACITY_ACTIVE = 1;
@@ -706,7 +707,7 @@ HTML_TEMPLATE = """
         // ---------- Coordinated crossfade text swap ----------
         // All three slots are computed together before anything is touched,
         // so prev/active/next never briefly show mismatched sizes.
-        const FADE_MS = 160;
+        const FADE_MS = 90;
         const slots = {
             'prev-line': { inner: document.querySelector('#prev-line .lyric-inner'), opacity: OPACITY_ADJACENT, isActive: false },
             'active-line': { inner: document.querySelector('#active-line .lyric-inner'), opacity: OPACITY_ACTIVE, isActive: true },
@@ -1039,6 +1040,15 @@ HTML_TEMPLATE = """
             ringSvg.classList.remove('seeking');
             serverProgress = seekPositionMs;
             serverTimestamp = performance.now();
+            // Spotify's own state takes a moment to settle after a seek
+            // PUT - a poll response landing in that window can carry the
+            // pre-seek position and yank the ring backward before the
+            // catch-up poll corrects it again (the "glitches forward then
+            // back" symptom). Holding our own optimistic position as the
+            // source of truth for a short grace window, instead of letting
+            // the very next poll response overwrite it, is what keeps the
+            // ring moving in one smooth direction through a seek.
+            seekGraceUntil = performance.now() + 1500;
             sendSeek(seekPositionMs);
         }
 
@@ -1053,7 +1063,12 @@ HTML_TEMPLATE = """
             } catch (e) {
                 // ignore - next poll will resync to real server position
             }
-            pollServer(true);
+            // Give Spotify's own backend a beat to actually settle into
+            // the new position before we read it back - polling for it
+            // immediately is exactly what raced a stale snapshot against
+            // the seek in the old flow. The regular 700ms poll loop still
+            // picks it up right after this, well within the grace window.
+            setTimeout(() => pollServer(true), 450);
         }
 
         if (window.PointerEvent) {
@@ -1075,6 +1090,7 @@ HTML_TEMPLATE = """
         let pollInFlight = false;
         let pollSeq = 0;
         let missCount = 0;
+        let transientCount = 0;
 
         async function pollServer(force) {
             if (pollInFlight && !force) return;
@@ -1094,6 +1110,7 @@ HTML_TEMPLATE = """
 
                 const networkLatency = (fetchEnd - fetchStart) / 2;
                 missCount = 0;
+                if (data.trackId) transientCount = 0;
 
                 // Reconcile server truth with an in-flight optimistic
                 // play/pause: trust the optimistic value until either the
@@ -1118,7 +1135,7 @@ HTML_TEMPLATE = """
                     // shows that song immediately instead of waiting for
                     // playback to start.
                     isPlaying = !!effectiveIsPlaying;
-                    if (!isSeeking) {
+                    if (!isSeeking && performance.now() > seekGraceUntil) {
                         serverProgress = data.progressMs;
                         serverTimestamp = performance.now() - networkLatency;
                     }
@@ -1174,8 +1191,27 @@ HTML_TEMPLATE = """
                             applyLines(prevText, activeText, nextText);
                         }
                     }
+                } else if (data.transient) {
+                    // The server hit a hiccup (network blip, token refresh,
+                    // a rejected/expired token, a bad Spotify response) - it
+                    // is explicitly NOT telling us playback stopped. Leave
+                    // everything exactly as it is (last track, lyrics,
+                    // progress keep advancing off the last known-good
+                    // anchor) and just retry sooner than the normal cadence
+                    // so a real recovery shows up fast. This is what keeps
+                    // the screen locked to the last playing song instead of
+                    // going black on a transient error.
+                    transientCount++;
+                    // Fast-retry the first several misses to recover almost
+                    // instantly from a blip; beyond that, fall back to the
+                    // normal poll cadence instead of hammering the network
+                    // if something stays down for a while.
+                    if (transientCount <= 15) setTimeout(() => pollServer(true), 200);
                 } else {
-                    // Nothing loaded at all.
+                    // Spotify itself confirmed there's no active session
+                    // anywhere (Spotify isn't open / nothing loaded). This
+                    // is the one legitimate reason to blank the screen.
+                    transientCount = 0;
                     isPlaying = false;
                     updatePlayPauseIcon();
                     applyLines('', '', '');
@@ -1187,11 +1223,12 @@ HTML_TEMPLATE = """
                     if (!isSeeking) setProgressVisual(0);
                 }
             } catch (e) {
-                // Network hiccup: count misses, and if we've been stuck for a
-                // while force an immediate re-check rather than silently
-                // sitting on stale state.
+                // Network hiccup talking to our own backend: same
+                // treatment as a transient server response - keep showing
+                // the last known state and retry quickly instead of
+                // silently sitting stuck or blanking out.
                 missCount++;
-                if (missCount >= 2) setTimeout(() => pollServer(true), 200);
+                if (missCount <= 15) setTimeout(() => pollServer(true), 200);
             } finally {
                 clearTimeout(timeoutId);
                 if (mySeq === pollSeq) pollInFlight = false;
@@ -1343,8 +1380,8 @@ def callback():
 
     return redirect('/')
 
-def get_valid_token():
-    if time.time() < session.get('expires_at', 0):
+def get_valid_token(force=False):
+    if not force and time.time() < session.get('expires_at', 0):
         return session.get('access_token')
 
     client_id = session.get('client_id', '')
@@ -1605,9 +1642,19 @@ def control():
 
 @app.route('/api/now-playing')
 def now_playing():
+    # "transient": True on any of these responses tells the client this
+    # is a hiccup (network blip, expired/rejected token, Spotify rate
+    # limit, a bad response body) rather than Spotify genuinely reporting
+    # nothing is playing. The client keeps showing whatever it already
+    # had on a transient response instead of blanking the screen - it
+    # only blanks when Spotify itself confirms there's no active session
+    # (a real 204, or a 200 with an empty player object), which is the
+    # "Spotify isn't open" case. That split is what keeps the display
+    # locked to the last playing song through momentary poll failures
+    # instead of going black and getting stuck there.
     token = get_valid_token()
     if not token:
-        return jsonify({"isPlaying": False, "error": "Token missing"})
+        return jsonify({"isPlaying": False, "trackId": None, "transient": True})
 
     # /v1/me/player (rather than /v1/me/player/currently-playing) is used
     # here because it reports the full playback state tied to the active
@@ -1615,24 +1662,45 @@ def now_playing():
     # device session exists at all. That's what lets the very first poll
     # right after connecting show whatever track was already loaded
     # (playing or paused) instead of staying blank until a new song starts.
-    try:
-        player_res = requests.get(
+    def fetch_player(tok):
+        return requests.get(
             "https://api.spotify.com/v1/me/player",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={"Authorization": f"Bearer {tok}"},
             timeout=4
         )
+
+    try:
+        player_res = fetch_player(token)
+        # A 401 here means the access token we had was rejected even
+        # though we thought it was still valid (clock skew, a token
+        # revoked early, etc). One forced refresh-and-retry recovers
+        # from that immediately instead of surfacing a blank screen and
+        # waiting for the next poll to happen to fix itself.
+        if player_res.status_code == 401:
+            fresh_token = get_valid_token(force=True)
+            if fresh_token:
+                player_res = fetch_player(fresh_token)
     except Exception:
+        return jsonify({"isPlaying": False, "trackId": None, "transient": True})
+
+    if player_res.status_code == 204:
+        # No active Spotify Connect session at all - Spotify itself isn't
+        # open/playing anywhere. This is the one genuine "nothing to show".
         return jsonify({"isPlaying": False, "trackId": None})
 
-    if player_res.status_code == 204 or not player_res.ok:
-        return jsonify({"isPlaying": False, "trackId": None})
+    if not player_res.ok:
+        # 401/403/429/5xx - Spotify or our own request failed, not the
+        # same thing as "nothing is playing". Don't blank on this.
+        return jsonify({"isPlaying": False, "trackId": None, "transient": True})
 
     try:
         player = player_res.json()
     except Exception:
-        return jsonify({"isPlaying": False, "trackId": None})
+        return jsonify({"isPlaying": False, "trackId": None, "transient": True})
 
     if not player:
+        # A 200 with a genuinely empty body is Spotify's other way of
+        # saying no active device/session - treat it the same as 204.
         return jsonify({"isPlaying": False, "trackId": None})
 
     item = player.get('item') or {}
@@ -1642,7 +1710,10 @@ def now_playing():
     artist_name = artists[0].get('name', '') if artists and isinstance(artists[0], dict) else ""
 
     if not track_name or not artist_name:
-        return jsonify({"isPlaying": False, "trackId": None})
+        # The player object came back but without a usable track - an odd
+        # transient shape (e.g. mid-transition between tracks), not proof
+        # playback stopped. Keep whatever the client already has.
+        return jsonify({"isPlaying": False, "trackId": None, "transient": True})
 
     album = item.get('album') or {}
     images = album.get('images') or []
