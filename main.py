@@ -4,6 +4,7 @@ import requests
 import urllib.parse
 import base64
 import re
+import threading
 from flask import Flask, request, jsonify, render_template_string, redirect, session, make_response
 
 app = Flask(__name__)
@@ -31,6 +32,12 @@ HTML_TEMPLATE = """
     <script src="https://cdnjs.cloudflare.com/ajax/libs/color-thief/2.3.0/color-thief.umd.js"></script>
     <style>
         * { -webkit-tap-highlight-color: transparent; }
+
+        /* --fade-ms is written by the script from its TIMING table, so
+           the CSS fade and the JS swap logic share one definition. The
+           value here is only a fallback for the first paint. */
+        :root { --fade-ms: 160ms; }
+
         body {
             background-color: #121212;
             color: white;
@@ -155,9 +162,15 @@ HTML_TEMPLATE = """
             display: inline-block;
             line-height: 1.15;
             opacity: 0;
-            will-change: opacity, font-size;
-            transition: opacity 0.13s cubic-bezier(0.4, 0, 0.2, 1),
-                        font-size 0.13s cubic-bezier(0.4, 0, 0.2, 1);
+            transform: translateY(0);
+            will-change: opacity, transform;
+            /* Only compositor-friendly properties are transitioned.
+               font-size is deliberately NOT here: it is only ever written
+               while the line is invisible, and animating it produced a
+               visible resize pop plus a layout pass on every frame of
+               the fade. */
+            transition: opacity var(--fade-ms) cubic-bezier(0.22, 1, 0.36, 1),
+                        transform var(--fade-ms) cubic-bezier(0.22, 1, 0.36, 1);
         }
 
         .adjacent-line .lyric-inner {
@@ -208,7 +221,14 @@ HTML_TEMPLATE = """
 
         #progress-thumb {
             opacity: 0;
-            transition: opacity 0.15s ease;
+            transition: opacity 0.15s ease, fill 0.15s ease;
+        }
+
+        /* Spotify rejected the seek (no active device, restricted
+           device, rate limit): brief red flash on the thumb. */
+        #progress-thumb.seek-failed {
+            opacity: 1;
+            fill: #ff5252;
         }
 
         #controls-bar:hover #progress-thumb,
@@ -216,11 +236,10 @@ HTML_TEMPLATE = """
             opacity: 1;
         }
 
+        /* The fill is driven every animation frame from JS; a CSS
+           transition stacked on top of that only lagged and stair-stepped
+           the sweep, so there is none. */
         #progress-track-fill {
-            transition: stroke-dasharray 0.1s linear;
-        }
-
-        #progress-ring.seeking #progress-track-fill {
             transition: none;
         }
 
@@ -431,23 +450,162 @@ HTML_TEMPLATE = """
         const colorThief = new ColorThief();
         const NOSLEEP_SRC = "data:video/mp4;base64,{{ nosleep_video }}";
 
-        let cachedTrackId = "";
-        let parsedLines = [];
-        let wakeLock = null;
-        let noSleepVideo = null;
-
-        let serverProgress = 0;
-        let serverTimestamp = 0;
-        let isPlaying = false;
-        let lastActiveIndex = -2;
-        let trackDurationMs = 0;
-        let isSeeking = false;
-        let seekPositionMs = 0;
-        let seekGraceUntil = 0;
+        // =====================================================================
+        // TIMING - the single place every duration in this page is defined.
+        // The CSS fade duration is written *from* here (see the --fade-ms
+        // custom property below) so JS and CSS can never drift apart again.
+        // =====================================================================
+        const TIMING = {
+            FADE_MS: 160,              // lyric crossfade (opacity + transform), one leg
+            POLL_MS: 400,              // steady-state poll cadence
+            RETRY_MS: 250,             // fast retry after a transient / ignored response
+            RETRY_MAX: 20,             // fast retries in a row before falling back to POLL_MS
+            FETCH_TIMEOUT_MS: 6000,    // abort a /api/now-playing request after this
+            PLAYPAUSE_HOLD_MS: 4000,   // trust optimistic play/pause until confirmed or this passes
+            SEEK_HOLD_MS: 6000,        // trust optimistic seek position until confirmed or this passes
+            SEEK_TOLERANCE_MS: 2500,   // server progress within this of ours = seek confirmed
+            SKIP_HOLD_MS: 4000,        // wait for the track id to change after next/previous
+            CONTROL_GRACE_MS: 8000,    // no blanking within this long after any local action
+            EMPTY_CONFIRM_COUNT: 5,    // consecutive genuine "nothing playing" polls before blanking...
+            EMPTY_CONFIRM_MS: 4000,    // ...and they must span at least this long
+            DRIFT_SNAP_MS: 1500,       // progress error above this snaps; below it is eased out
+            DRIFT_EASE: 0.35,          // fraction of the remaining error removed per poll
+            SEEK_FAIL_FLASH_MS: 600,   // thumb flashes red this long when Spotify rejects a seek
+            RESIZE_DEBOUNCE_MS: 120,
+            RESIZE_RECHECK_MS: 400
+        };
+        document.documentElement.style.setProperty('--fade-ms', TIMING.FADE_MS + 'ms');
 
         // ---------- Opacity targets per slot ----------
         const OPACITY_ACTIVE = 1;
         const OPACITY_ADJACENT = 0.35;
+
+        // =====================================================================
+        // Playback state - ONE source of truth for "where are we in the song".
+        //
+        // anchorProgressMs is the track position at anchorTime (a
+        // performance.now() stamp). currentProgressMs() extrapolates from
+        // that while playing and returns it unchanged while paused, and
+        // returns the live drag position while the user is seeking. The
+        // ring, the lyric line selection, the optimistic controls and the
+        // poll reconciliation all read from this one function, so they can
+        // never disagree with each other.
+        // =====================================================================
+        let anchorProgressMs = 0;
+        let anchorTime = 0;
+        let isPlaying = false;
+        let trackDurationMs = 0;
+        let cachedTrackId = "";
+        let parsedLines = [];
+        let lyricsPending = false;
+        let lastActiveIndex = -2;
+
+        let isSeeking = false;
+        let seekPositionMs = 0;
+
+        let wakeLock = null;
+        let noSleepVideo = null;
+
+        function nowMs() { return performance.now(); }
+
+        function setAnchor(progressMs) {
+            anchorProgressMs = Math.max(0, progressMs || 0);
+            anchorTime = nowMs();
+        }
+
+        function currentProgressMs() {
+            if (isSeeking) return seekPositionMs;
+            let p = isPlaying ? anchorProgressMs + (nowMs() - anchorTime) : anchorProgressMs;
+            if (trackDurationMs > 0 && p > trackDurationMs) p = trackDurationMs;
+            return p < 0 ? 0 : p;
+        }
+
+        // Raw last server snapshot (always recorded, even when the poller
+        // decides not to *apply* it). Used to revert a failed optimistic
+        // action to exactly what Spotify last said.
+        const serverSnap = { trackId: "", progressMs: 0, isPlaying: false, at: 0, valid: false };
+
+        // =====================================================================
+        // Local authority - the optimistic-UI mechanism, applied uniformly
+        // to play/pause, seek and next/previous.
+        //
+        // After a local action we know what the state *will* be before
+        // Spotify does. Until Spotify's own reports agree with us (or the
+        // hold window runs out), poll responses are not allowed to
+        // overwrite isPlaying / progress. That is what stops: the icon
+        // flickering back after a tap, the ring being yanked to the
+        // pre-seek position by a stale snapshot, and a paused ring drifting.
+        // =====================================================================
+        const localAuth = {
+            active: false,
+            kind: null,          // 'playpause' | 'seek' | 'skip'
+            isPlaying: null,     // expected play state (null = don't care)
+            progressMs: null,    // expected position at progressAt (null = don't care)
+            progressAt: 0,
+            skipFromTrackId: "", // 'skip': the track we expect to leave
+            expiresAt: 0
+        };
+        let lastActionAt = -1e9;
+
+        function assertLocal(kind, opts) {
+            localAuth.active = true;
+            localAuth.kind = kind;
+            localAuth.isPlaying = opts.isPlaying === undefined ? null : opts.isPlaying;
+            localAuth.progressMs = opts.progressMs === undefined ? null : opts.progressMs;
+            localAuth.progressAt = nowMs();
+            localAuth.skipFromTrackId = opts.skipFromTrackId || "";
+            localAuth.expiresAt = nowMs() + opts.holdMs;
+            lastActionAt = nowMs();
+        }
+
+        function releaseLocal() {
+            localAuth.active = false;
+            localAuth.kind = null;
+            localAuth.isPlaying = null;
+            localAuth.progressMs = null;
+            localAuth.skipFromTrackId = "";
+        }
+
+        // Where the local authority expects the track to be right now.
+        function localExpectedProgress() {
+            if (localAuth.progressMs === null) return null;
+            const playing = localAuth.isPlaying === null ? isPlaying : localAuth.isPlaying;
+            return localAuth.progressMs + (playing ? nowMs() - localAuth.progressAt : 0);
+        }
+
+        // Decide whether a server snapshot agrees with the local authority.
+        // Returns 'none' (no authority), 'confirmed', 'expired' or 'hold'.
+        function reconcileLocal(data) {
+            if (!localAuth.active) return 'none';
+            const t = nowMs();
+            if (t > localAuth.expiresAt) { releaseLocal(); return 'expired'; }
+
+            if (localAuth.kind === 'skip') {
+                if (data.trackId && data.trackId !== localAuth.skipFromTrackId) { releaseLocal(); return 'confirmed'; }
+                return 'hold';
+            }
+
+            const playingOk = localAuth.isPlaying === null || data.isPlaying === localAuth.isPlaying;
+            let progressOk = true;
+            const expected = localExpectedProgress();
+            if (expected !== null) {
+                progressOk = Math.abs((data.progressMs || 0) - expected) <= TIMING.SEEK_TOLERANCE_MS;
+            }
+            if (playingOk && progressOk) { releaseLocal(); return 'confirmed'; }
+            return 'hold';
+        }
+
+        // Revert the display to the last thing Spotify actually told us -
+        // used when Spotify rejects an optimistic action outright.
+        function revertToServerSnapshot() {
+            releaseLocal();
+            if (!serverSnap.valid || serverSnap.trackId !== cachedTrackId) return;
+            isPlaying = serverSnap.isPlaying;
+            const p = serverSnap.progressMs + (serverSnap.isPlaying ? nowMs() - serverSnap.at : 0);
+            setAnchor(p);
+            updatePlayPauseIcon();
+            lastActiveIndex = -2;
+        }
 
         // ---------- Wake Lock (with iOS fallback) ----------
         async function requestWakeLock() {
@@ -507,64 +665,73 @@ HTML_TEMPLATE = """
             navigator.sendBeacon('/logout');
         });
 
-        // ---------- Playback controls ----------
-        // Optimistic play/pause: the button flips instantly on click instead
-        // of waiting on a network round trip, and we tell the server the
-        // exact target state (no extra state-read call, no race). Polling
-        // is told to briefly trust the optimistic state so a slightly-stale
-        // response from Spotify can't flicker the icon back before the
-        // change has actually propagated.
-        let optimisticIsPlaying = null;
-        let optimisticExpires = 0;
+        // =====================================================================
+        // Playback controls (all optimistic, all verified against the
+        // server's success flag, all reverted on a hard failure)
+        // =====================================================================
+        let controlSeq = 0;
 
-        // Any local control action (play/pause/next/previous/seek) is
-        // followed by a short window where Spotify's own device/session
-        // state is known to flap - it can briefly report "nothing
-        // playing" (a real 204, not a network error) while the command
-        // is still propagating. lastActionAt marks that window so the
-        // poller can tell "Spotify momentarily hiccupped right after I
-        // told it to do something" apart from "the user actually stopped
-        // playback a while ago", and never blanks the screen for the
-        // former.
-        let lastActionAt = 0;
-
-        async function sendControl(action) {
-            lastActionAt = performance.now();
-            requestWakeLock();
-            try {
-                const res = await fetch('/api/control', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: action })
-                });
-                const data = await res.json().catch(() => ({}));
-                if (!data.success) {
-                    // Server confirmed the action failed - drop the
-                    // optimistic override so the next poll shows reality.
-                    optimisticIsPlaying = null;
-                    optimisticExpires = 0;
-                }
-            } catch (e) {
-                optimisticIsPlaying = null;
-                optimisticExpires = 0;
-            }
-            pollServer(true);
+        async function postControl(body) {
+            const res = await fetch('/api/control', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const data = await res.json().catch(() => ({}));
+            return !!data.success;
         }
 
         function togglePlayPause() {
+            requestWakeLock();
+            // Anchor at the exact position currently on screen, so pausing
+            // freezes the ring where it *is* (not where the last poll said
+            // it was, up to a poll interval ago) and resuming continues from
+            // the same spot with no forward jump.
+            const here = currentProgressMs();
             const target = !isPlaying;
+            setAnchor(here);
             isPlaying = target;
-            optimisticIsPlaying = target;
-            optimisticExpires = performance.now() + 2500;
             updatePlayPauseIcon();
-            sendControl(target ? 'play' : 'pause');
+            assertLocal('playpause', { isPlaying: target, progressMs: here, holdMs: TIMING.PLAYPAUSE_HOLD_MS });
+
+            const mySeq = ++controlSeq;
+            postControl({ action: target ? 'play' : 'pause' })
+                .then(ok => { if (!ok && mySeq === controlSeq) revertToServerSnapshot(); })
+                .catch(() => { if (mySeq === controlSeq) revertToServerSnapshot(); })
+                .finally(() => pollServer(true));
+        }
+
+        function sendControl(action) {
+            requestWakeLock();
+            if (action !== 'next' && action !== 'previous') return;
+            // Optimistic skip: the ring drops to zero and the lyrics fade
+            // out right away; the title stays until the new track's data
+            // lands (so nothing looks "gone"). Poll responses that still
+            // carry the old track id are held back until the id changes
+            // or the hold window passes (skip refused / end of queue), at
+            // which point whatever Spotify reports is accepted again.
+            const from = cachedTrackId;
+            parsedLines = [];
+            lyricsPending = false;
+            lastActiveIndex = -2;
+            applyLines('', '', '');
+            setAnchor(0);
+            cachedTrackId = "";
+            assertLocal('skip', { skipFromTrackId: from, holdMs: TIMING.SKIP_HOLD_MS });
+
+            const mySeq = ++controlSeq;
+            postControl({ action: action })
+                .then(ok => { if (!ok && mySeq === controlSeq) { releaseLocal(); } })
+                .catch(() => { if (mySeq === controlSeq) releaseLocal(); })
+                .finally(() => pollServer(true));
         }
 
         function updatePlayPauseIcon() {
             const icon = document.getElementById('play-pause-icon');
-            icon.innerHTML = isPlaying
+            const next = isPlaying
                 ? '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>'
                 : '<path d="M8 5v14l11-7z"/>';
+            if (icon._state !== next) { icon._state = next; icon.innerHTML = next; }
         }
 
         // ---------- Auto-fit sizing ----------
@@ -578,15 +745,6 @@ HTML_TEMPLATE = """
         const ADJACENT_MAX = 40, ADJACENT_MIN = 9;
         const ACTIVE_WEIGHT = 900, ADJACENT_WEIGHT = 600;
         const REF_SIZE = 100;
-        // Canvas measureText() has no idea the real element renders with
-        // CSS letter-spacing - it measures raw glyph advances only. Left
-        // uncorrected, the font size solved from that measurement is
-        // systematically too large, so the real rendered line ends up
-        // wider than its box and gets clipped with "...". Letter-spacing
-        // in CSS is a fixed px add-on per character (it does not scale
-        // with font-size), so it's subtracted from the available width
-        // up front, before solving for size, rather than baked into the
-        // canvas measurement itself.
         const LYRIC_LETTER_SPACING = 1.5; // px, matches body's letter-spacing
         const LYRIC_HPAD = 10;            // px, matches .lyric-inner's own padding
         const LYRIC_SAFETY = 8;           // px, extra margin against rounding
@@ -599,29 +757,11 @@ HTML_TEMPLATE = """
 
         function measureWidthAtRef(text, weight) {
             measureCtx.font = `${weight} ${REF_SIZE}px 'Montserrat', sans-serif`;
-            // The real element renders with `text-transform: uppercase`
-            // (inherited from body), but the text handed to measureText()
-            // here is the original mixed/lower-case source string. Capital
-            // glyphs are almost always wider than their lowercase
-            // counterparts, so measuring the raw string systematically
-            // *underestimates* the true rendered width - the size solved
-            // from that measurement then comes out too large and the real
-            // (uppercase) line overflows and gets ellipsis-clipped, even
-            // though the math "checked out" against the wrong string.
-            // Measuring the upper-cased text is what the element actually
-            // paints, so this is the fix, not a refinement.
+            // The element renders uppercase (inherited from body) so it
+            // must be measured uppercase too.
             return measureCtx.measureText(text.toUpperCase()).width || 1;
         }
 
-        // Every lyric line renders on exactly one physical line, however
-        // short (a single word) or long it is - never wrapped to two or
-        // three lines. Size is picked purely so the whole line's width
-        // fits the available space; a one-line height cap keeps very long
-        // lines from getting tall enough to clip vertically instead.
-        // Returns both the chosen size and the hard pixel width budget it
-        // was solved against, so callers can also verify against the real
-        // live DOM afterwards (canvas measurement is a very close estimate,
-        // not a guarantee - see fitTextToWidth below).
         function computeFontSize(text, isActive) {
             const maxSize = isActive ? ACTIVE_MAX : ADJACENT_MAX;
             const minSize = isActive ? ACTIVE_MIN : ADJACENT_MIN;
@@ -635,9 +775,6 @@ HTML_TEMPLATE = """
 
             let size = (availWidth / refWidth) * REF_SIZE;
 
-            // Cap by the vertical room one line is actually allotted, so a
-            // short line at max size never grows tall enough to crowd its
-            // neighbours.
             const maxHeight = containerEl.clientHeight * (isActive ? 0.30 : 0.16);
             const heightCap = maxHeight / 1.15;
             size = Math.min(size, heightCap);
@@ -647,40 +784,14 @@ HTML_TEMPLATE = """
             return { size: Math.round(size), availWidth };
         }
 
-        // Canvas pre-measurement gets very close but isn't pixel-exact
-        // once real font hinting, subpixel rounding and the browser's own
-        // uppercase-transform glyph substitution are all in play. Rather
-        // than trust the estimate blindly (which is what kept producing
-        // the "..." clipping even after correcting for letter-spacing and
-        // case), the actual rendered element is measured right after the
-        // estimate is applied, and nudged down a few times if it still
-        // doesn't fit - a cheap, synchronous, no-extra-frame correction
-        // against ground truth instead of a second formula to get wrong.
-        // minSize is the normal, designed-for readable floor. If the
-        // element still doesn't fit even there (a very long line on a very
-        // narrow screen), it's allowed to keep shrinking past that floor
-        // down to HARD_FLOOR_PX - a small, still-legible size is a much
-        // better outcome than the line being ellipsis-clipped, which is
-        // the exact symptom this whole pass exists to get rid of.
+        // Canvas pre-measurement is close but not pixel-exact; verify the
+        // real rendered width and nudge down until it fits. This is only
+        // ever called while the element is invisible (opacity 0) and with
+        // font-size deliberately NOT part of the CSS transition list, so
+        // the intermediate sizes written here are never painted and never
+        // animate - no layout thrash, no size wobble.
         const HARD_FLOOR_PX = 7;
         function fitTextToWidth(el, guessSize, minSize, availWidth) {
-            // The element's own stylesheet rule transitions font-size
-            // (so a genuine active<->adjacent size change fades smoothly
-            // instead of snapping). But this loop can write font-size
-            // several times in a row while forcing a synchronous layout
-            // read (el.scrollWidth) between each write - and a layout
-            // read between two style writes is exactly what makes a
-            // browser treat each intermediate value as its own transition
-            // leg, so instead of one clean resize the line visibly
-            // shrinks, overshoots, shrinks again, etc. None of these
-            // intermediate values are meant to be seen - only the final,
-            // settled size is - so the transition is switched off for the
-            // duration of this correction loop and restored right after,
-            // on the next frame once the size has already stopped
-            // changing (so nothing has anything left to animate through).
-            const prevTransition = el.style.transition;
-            el.style.transition = 'none';
-
             let size = guessSize;
             el.style.fontSize = size + 'px';
             for (let i = 0; i < 6; i++) {
@@ -692,8 +803,6 @@ HTML_TEMPLATE = """
                 size = next;
                 el.style.fontSize = size + 'px';
             }
-            // Extra passes below the normal floor, only entered if it's
-            // still overflowing there.
             for (let i = 0; i < 8 && size > HARD_FLOOR_PX; i++) {
                 const actualWidth = el.scrollWidth;
                 if (actualWidth <= availWidth + 0.5) break;
@@ -703,33 +812,26 @@ HTML_TEMPLATE = """
                 size = next;
                 el.style.fontSize = size + 'px';
             }
-
-            // Flush the final size so the browser has committed it before
-            // transitions come back on, then hand control of `transition`
-            // back to the stylesheet (not to a hardcoded value) so any
-            // later legitimate change (e.g. this same line swapping from
-            // adjacent to active) still gets the designed fade.
-            void el.offsetHeight;
-            requestAnimationFrame(() => {
-                el.style.transition = prevTransition;
-            });
             return size;
         }
 
-        // ---------- Coordinated crossfade text swap ----------
-        // All three slots are computed together before anything is touched,
-        // so prev/active/next never briefly show mismatched sizes.
-        // Matches the .lyric-inner CSS transition duration exactly (see
-        // the <style> block above) - the previous mismatch (this swap
-        // firing well before or after the CSS fade actually finished) is
-        // what caused the visible "jump" mid-crossfade instead of a clean
-        // fade. Keeping these two numbers identical is what makes the
-        // line change look smooth.
-        const FADE_MS = 130;
+        // =====================================================================
+        // Coordinated crossfade text swap
+        //
+        // Each slot fades out (opacity + a few px of drift), and the text
+        // and its font-size are swapped ONLY once the fade-out has really
+        // finished - detected via `transitionend` on the opacity property,
+        // not a parallel setTimeout that merely hopes to line up with the
+        // CSS duration. A timeout (FADE_MS + slack) exists purely as a
+        // safety net for browsers that drop transitionend (e.g. the tab
+        // was hidden). font-size is not transitioned at all: it is always
+        // written while the line is invisible, so animating it only ever
+        // added a visible resize pop for no benefit.
+        // =====================================================================
         const slots = {
-            'prev-line': { inner: document.querySelector('#prev-line .lyric-inner'), opacity: OPACITY_ADJACENT, isActive: false },
-            'active-line': { inner: document.querySelector('#active-line .lyric-inner'), opacity: OPACITY_ACTIVE, isActive: true },
-            'next-line': { inner: document.querySelector('#next-line .lyric-inner'), opacity: OPACITY_ADJACENT, isActive: false }
+            'prev-line': { inner: document.querySelector('#prev-line .lyric-inner'), opacity: OPACITY_ADJACENT, isActive: false, shift: -5 },
+            'active-line': { inner: document.querySelector('#active-line .lyric-inner'), opacity: OPACITY_ACTIVE, isActive: true, shift: -8 },
+            'next-line': { inner: document.querySelector('#next-line .lyric-inner'), opacity: OPACITY_ADJACENT, isActive: false, shift: -5 }
         };
 
         function applyLines(prevText, activeText, nextText) {
@@ -738,11 +840,6 @@ HTML_TEMPLATE = """
             setSlot(slots['next-line'], nextText || '');
         }
 
-        // Sets the text and its font-size together, verifying the real
-        // rendered width against the DOM (not just the canvas estimate)
-        // before the line is ever revealed - all synchronous, so this adds
-        // no extra animation frame / delay versus the old estimate-only
-        // path.
         function applySizedText(inner, text, isActive) {
             const { size: guessSize, availWidth } = computeFontSize(text, isActive);
             inner.textContent = text;
@@ -754,75 +851,104 @@ HTML_TEMPLATE = """
             fitTextToWidth(inner, guessSize, minSize, availWidth);
         }
 
+        function cancelPendingSwap(inner) {
+            if (inner._onFadeEnd) {
+                inner.removeEventListener('transitionend', inner._onFadeEnd);
+                inner._onFadeEnd = null;
+            }
+            if (inner._fadeTimer) {
+                clearTimeout(inner._fadeTimer);
+                inner._fadeTimer = null;
+            }
+            if (inner._revealRaf) {
+                cancelAnimationFrame(inner._revealRaf);
+                inner._revealRaf = null;
+            }
+        }
+
+        // Write the new text/size while invisible and untransitioned, then
+        // fade in from a small offset on the next frame.
+        function swapAndReveal(slot, text) {
+            const inner = slot.inner;
+            inner.style.transition = 'none';
+            inner.style.opacity = '0';
+            inner.style.transform = `translateY(${-slot.shift}px)`;
+            applySizedText(inner, text, slot.isActive);
+            void inner.offsetHeight; // commit the untransitioned state
+            inner.style.transition = '';
+            inner._revealRaf = requestAnimationFrame(() => {
+                inner._revealRaf = null;
+                inner.style.opacity = text ? String(slot.opacity) : '0';
+                inner.style.transform = 'translateY(0)';
+            });
+        }
+
         function setSlot(slot, text) {
             const inner = slot.inner;
             if (inner.dataset.text === text) return;
-            const hadContent = !!inner.dataset.text;
             inner.dataset.text = text;
+            cancelPendingSwap(inner);
 
-            clearTimeout(inner._fadeTimer);
-            if (!hadContent && !inner.textContent) {
-                // Nothing was showing yet - fade straight in, no need to
-                // fade out first.
-                applySizedText(inner, text, slot.isActive);
-                requestAnimationFrame(() => {
-                    inner.style.opacity = text ? String(slot.opacity) : '0';
-                });
+            // Already invisible (never shown, or a previous fade-out has
+            // finished) - no need to fade out first.
+            const currentOpacity = parseFloat(getComputedStyle(inner).opacity) || 0;
+            if (currentOpacity <= 0.01) {
+                swapAndReveal(slot, text);
                 return;
             }
 
+            const onEnd = (ev) => {
+                if (ev && ev.propertyName && ev.propertyName !== 'opacity') return;
+                cancelPendingSwap(inner);
+                swapAndReveal(slot, text);
+            };
+            inner._onFadeEnd = onEnd;
+            inner.addEventListener('transitionend', onEnd);
+            inner._fadeTimer = setTimeout(onEnd, TIMING.FADE_MS + 80);
+
             inner.style.opacity = '0';
-            inner._fadeTimer = setTimeout(() => {
-                applySizedText(inner, text, slot.isActive);
-                requestAnimationFrame(() => {
-                    inner.style.opacity = text ? String(slot.opacity) : '0';
-                });
-            }, FADE_MS);
+            inner.style.transform = `translateY(${slot.shift}px)`;
         }
 
         function refitCurrentLines() {
             Object.values(slots).forEach(slot => {
                 const text = slot.inner.dataset.text || '';
                 if (!text) return;
-                applySizedText(slot.inner, text, slot.isActive);
+                const inner = slot.inner;
+                const prevTransition = inner.style.transition;
+                inner.style.transition = 'none';
+                applySizedText(inner, text, slot.isActive);
+                void inner.offsetHeight;
+                inner.style.transition = prevTransition;
             });
         }
 
         let resizeTimer = null;
+        let resizeRecheckTimer = null;
         function scheduleRefit() {
             clearTimeout(resizeTimer);
-            resizeTimer = setTimeout(() => { refitCurrentLines(); fitTitle(); }, 120);
+            clearTimeout(resizeRecheckTimer);
+            resizeTimer = setTimeout(() => { refitCurrentLines(); fitTitle(); }, TIMING.RESIZE_DEBOUNCE_MS);
             // Mobile browsers can report stale dimensions right after a
             // rotation event, so double-check shortly after too.
-            setTimeout(() => { refitCurrentLines(); fitTitle(); }, 400);
+            resizeRecheckTimer = setTimeout(() => { refitCurrentLines(); fitTitle(); }, TIMING.RESIZE_RECHECK_MS);
         }
         window.addEventListener('resize', scheduleRefit);
         window.addEventListener('orientationchange', scheduleRefit);
 
         // ---------- Now-playing title: fit, and marquee-scroll if it still
         // doesn't fit ----------
-        // First the same idea as the lyric auto-fit: shrink to the exact
-        // width available, down to a readable floor. If the text is still
-        // wider than the pill at that floor size, it switches to a
-        // left-aligned auto-scrolling marquee instead of ellipsis-clipping
-        // forever, so the whole title eventually becomes visible.
         const titleEl = document.getElementById('now-playing-title');
         const titleInnerEl = document.getElementById('now-playing-title-inner');
         const TITLE_MAX = 15, TITLE_MIN = 9;
         const MARQUEE_PX_PER_SEC = 38;
-        // Matches the hold/travel split in the marquee-scroll keyframes
-        // below (6%-94% is the travel leg = 88% of one cycle).
         const MARQUEE_TRAVEL_FRACTION = 0.88;
         let currentTitleText = '';
 
-        const TITLE_LETTER_SPACING = 0.2; // px, matches #now-playing-title-inner's letter-spacing
+        const TITLE_LETTER_SPACING = 0.2;
 
         function measureTitleWidthAtRef(text) {
             measureCtx.font = `700 ${REF_SIZE}px 'Montserrat', sans-serif`;
-            // Same fix as the lyric lines: the title also renders
-            // uppercase (inherited from body), so it must be measured
-            // uppercase too, or the solved size comes out too big and the
-            // real line overflows.
             return measureCtx.measureText(text.toUpperCase()).width || 1;
         }
 
@@ -838,13 +964,6 @@ HTML_TEMPLATE = """
             return { size: Math.round(size * 10) / 10, availWidth };
         }
 
-        // Fully synchronous, no requestAnimationFrame round trip: the
-        // canvas estimate is applied, then immediately checked and
-        // corrected against the real live element (scrollWidth reflects
-        // full un-clipped content width even while overflow:hidden hides
-        // the excess), all before this function returns. That is what
-        // keeps title changes feeling instant rather than adding a frame
-        // of visible delay.
         function applyTitleLayout() {
             if (!currentTitleText) return;
             titleInnerEl.classList.remove('marquee');
@@ -864,11 +983,6 @@ HTML_TEMPLATE = """
                 titleInnerEl.style.fontSize = size + 'px';
             }
 
-            // Even at the readable floor size, some titles (very long
-            // "Song (feat. Someone Else) • Artist" strings especially)
-            // still don't fit the pill - that's what the marquee is for,
-            // and it needs the real overflow amount, not the canvas
-            // estimate, to travel exactly as far as the text is long.
             const overflow = titleInnerEl.scrollWidth - titleEl.clientWidth;
             if (overflow > 2) {
                 const distance = overflow + 20;
@@ -893,12 +1007,6 @@ HTML_TEMPLATE = """
                 .replace(/"/g, '&quot;');
         }
 
-        // Song title and artist are rendered as two distinctly-weighted/
-        // -colored spans (title bright & bold, artist dimmer & lighter)
-        // joined by a small centered dot, instead of a plain
-        // "title — artist" string. Measurement/marquee logic still works
-        // off a plain-text equivalent (same length, so width math is
-        // unaffected by the markup).
         function setTitle(title, artist) {
             const text = artist ? `${title} • ${artist}` : title;
             if (text === currentTitleText) return;
@@ -916,13 +1024,9 @@ HTML_TEMPLATE = """
             applyTitleLayout();
         }
 
-        // ---------- Progress ring / seek ----------
-        // A ring that traces the whole rounded-rect perimeter of the
-        // controls pill, built from an SVG path so filling it is just a
-        // stroke-dasharray on a path with a known total length. Dragging
-        // (or a single click/tap) anywhere along the ring seeks to that
-        // point in the track; while a seek round trip is in flight the
-        // ring is driven purely from the local drag position.
+        // =====================================================================
+        // Progress ring / seek
+        // =====================================================================
         const ringSvg = document.getElementById('progress-ring');
         const ringGroup = document.getElementById('progress-ring-group');
         const ringBg = document.getElementById('progress-track-bg');
@@ -931,8 +1035,9 @@ HTML_TEMPLATE = """
         const ringThumb = document.getElementById('progress-thumb');
         const controlsBarEl = document.getElementById('controls-bar');
 
-        const RING_MARGIN = 6; // inset from the pill's outer edge
-        const RING_RADIUS = 34; // corner radius of the traced path
+        const RING_MARGIN = 6;
+        const RING_RADIUS = 34;
+        const RING_STEPS = 192;
         let ringTotalLength = 0;
         let ringSamples = [];
         let lastRingRatio = -1;
@@ -945,15 +1050,29 @@ HTML_TEMPLATE = """
                    `L 0 ${r} A ${r} ${r} 0 0 1 ${r} 0 Z`;
         }
 
+        // The path is sampled once per layout; every per-frame position
+        // lookup afterwards is a cheap linear interpolation between two
+        // samples instead of a getPointAtLength() call. That is what makes
+        // updating the ring on *every* animation frame affordable on a
+        // low-end head unit.
         function buildRingSamples() {
             ringSamples = [];
             if (!ringTotalLength) return;
-            const STEPS = 96;
-            for (let i = 0; i <= STEPS; i++) {
-                const len = (i / STEPS) * ringTotalLength;
+            for (let i = 0; i <= RING_STEPS; i++) {
+                const len = (i / RING_STEPS) * ringTotalLength;
                 const pt = ringFill.getPointAtLength(len);
                 ringSamples.push({ x: pt.x, y: pt.y, len: len });
             }
+        }
+
+        function pointAtRatio(ratio) {
+            const n = ringSamples.length - 1;
+            if (n < 1) return { x: 0, y: 0 };
+            const f = ratio * n;
+            const i = Math.min(n - 1, Math.max(0, Math.floor(f)));
+            const t = f - i;
+            const a = ringSamples[i], b = ringSamples[i + 1];
+            return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
         }
 
         function layoutRing() {
@@ -972,12 +1091,11 @@ HTML_TEMPLATE = """
             ringTotalLength = ringFill.getTotalLength();
             buildRingSamples();
             lastRingRatio = -1;
-            setProgressVisual(isSeeking ? seekPositionMs / (trackDurationMs || 1) : (trackDurationMs ? currentDisplayRatio() : 0));
+            setProgressVisual(currentDisplayRatio());
         }
 
         function currentDisplayRatio() {
-            const progress = isPlaying ? serverProgress + (performance.now() - serverTimestamp) : serverProgress;
-            return trackDurationMs > 0 ? progress / trackDurationMs : 0;
+            return trackDurationMs > 0 ? currentProgressMs() / trackDurationMs : 0;
         }
 
         if (window.ResizeObserver) {
@@ -988,15 +1106,12 @@ HTML_TEMPLATE = """
 
         function setProgressVisual(ratio) {
             ratio = Math.min(1, Math.max(0, ratio || 0));
-            // Skip sub-pixel-scale updates - avoids doing path geometry
-            // math and DOM writes every single animation frame for a
-            // change nobody could see.
-            if (Math.abs(ratio - lastRingRatio) < 0.0006) return;
+            if (Math.abs(ratio - lastRingRatio) < 0.0003) return;
             lastRingRatio = ratio;
             if (!ringTotalLength) return;
             const filledLen = ratio * ringTotalLength;
             ringFill.setAttribute('stroke-dasharray', `${filledLen} ${ringTotalLength}`);
-            const pt = ringFill.getPointAtLength(filledLen);
+            const pt = pointAtRatio(ratio);
             ringThumb.setAttribute('cx', pt.x);
             ringThumb.setAttribute('cy', pt.y);
         }
@@ -1010,8 +1125,6 @@ HTML_TEMPLATE = """
                 const dist = dx * dx + dy * dy;
                 if (dist < bestDist) { bestDist = dist; bestIdx = i; }
             }
-            // Refine locally between the neighbouring samples for a
-            // smoother, more precise hit point than the coarse grid alone.
             const lastIdx = ringSamples.length - 1;
             const lo = Math.max(0, bestIdx - 1), hi = Math.min(lastIdx, bestIdx + 1);
             let bestLen = ringSamples[bestIdx].len;
@@ -1033,16 +1146,22 @@ HTML_TEMPLATE = """
             return { x: clientX - rect.left - RING_MARGIN, y: clientY - rect.top - RING_MARGIN };
         }
 
+        // Live drag: the ring and the lyric lines both read from
+        // currentProgressMs(), which returns seekPositionMs while
+        // isSeeking - so the lyrics follow the thumb in the very same
+        // frame the thumb moves, playing or paused, with no poll involved.
         function updateSeekFromEvent(e) {
             if (!trackDurationMs) return;
             const p = ringLocalPointFromEvent(e);
             const ratio = ratioFromLocalPoint(p.x, p.y);
-            setProgressVisual(ratio);
             seekPositionMs = Math.round(ratio * trackDurationMs);
+            setProgressVisual(ratio);
+            syncLyricsToProgress(seekPositionMs);
         }
 
         function startSeek(e) {
-            if (!trackDurationMs) return;
+            if (!trackDurationMs || !cachedTrackId) return;
+            if (e.button !== undefined && e.button !== 0) return;
             isSeeking = true;
             ringSvg.classList.add('seeking');
             if (e.pointerId != null && ringHit.setPointerCapture) {
@@ -1052,42 +1171,51 @@ HTML_TEMPLATE = """
             e.preventDefault();
         }
 
+        let seekSeq = 0;
         function endSeek() {
             if (!isSeeking) return;
+            const target = seekPositionMs;
             isSeeking = false;
             ringSvg.classList.remove('seeking');
-            serverProgress = seekPositionMs;
-            serverTimestamp = performance.now();
-            // Spotify's own state takes a moment to settle after a seek
-            // PUT - a poll response landing in that window can carry the
-            // pre-seek position and yank the ring backward before the
-            // catch-up poll corrects it again (the "glitches forward then
-            // back" symptom). Holding our own optimistic position as the
-            // source of truth for a short grace window, instead of letting
-            // the very next poll response overwrite it, is what keeps the
-            // ring moving in one smooth direction through a seek.
-            seekGraceUntil = performance.now() + 1500;
-            sendSeek(seekPositionMs);
+            // Commit the drag position as the display anchor immediately,
+            // and hold it against poll responses until Spotify reports a
+            // position that agrees with it (within tolerance, accounting
+            // for elapsed playback) or the hold window passes. A fixed
+            // short grace was the old bug: Spotify Connect's progress_ms
+            // routinely lags 1-3 s, so the first poll after a short grace
+            // still carried the pre-seek position and dragged the ring back.
+            setAnchor(target);
+            syncLyricsToProgress(target);
+            assertLocal('seek', { progressMs: target, holdMs: TIMING.SEEK_HOLD_MS });
+            sendSeek(target);
         }
 
         async function sendSeek(positionMs) {
-            lastActionAt = performance.now();
             requestWakeLock();
+            const mySeq = ++seekSeq;
+            let ok = false;
             try {
-                await fetch('/api/control', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'seek', positionMs: positionMs })
-                });
+                ok = await postControl({ action: 'seek', positionMs: positionMs });
             } catch (e) {
-                // ignore - next poll will resync to real server position
+                ok = false;
             }
-            // Give Spotify's own backend a beat to actually settle into
-            // the new position before we read it back - polling for it
-            // immediately is exactly what raced a stale snapshot against
-            // the seek in the old flow. The regular 700ms poll loop still
-            // picks it up right after this, well within the grace window.
-            setTimeout(() => pollServer(true), 450);
+            if (mySeq !== seekSeq) return; // a newer seek superseded this one
+            if (!ok) {
+                // Spotify refused (no active device, restricted device,
+                // rate limit...) - say so visibly and put the ring/lyrics
+                // back where Spotify actually is instead of leaving a
+                // position on screen that isn't real.
+                flashSeekFailure();
+                revertToServerSnapshot();
+            }
+            pollServer(true);
+        }
+
+        let seekFailTimer = null;
+        function flashSeekFailure() {
+            ringThumb.classList.add('seek-failed');
+            clearTimeout(seekFailTimer);
+            seekFailTimer = setTimeout(() => ringThumb.classList.remove('seek-failed'), TIMING.SEEK_FAIL_FLASH_MS);
         }
 
         if (window.PointerEvent) {
@@ -1095,6 +1223,8 @@ HTML_TEMPLATE = """
             ringHit.addEventListener('pointermove', (e) => { if (isSeeking) updateSeekFromEvent(e); });
             ringHit.addEventListener('pointerup', endSeek);
             ringHit.addEventListener('pointercancel', endSeek);
+            ringHit.addEventListener('lostpointercapture', endSeek);
+            window.addEventListener('pointerup', endSeek);
         } else {
             ringHit.addEventListener('mousedown', startSeek);
             ringHit.addEventListener('touchstart', startSeek, { passive: false });
@@ -1104,85 +1234,148 @@ HTML_TEMPLATE = """
             window.addEventListener('touchend', endSeek);
         }
         window.addEventListener('touchcancel', endSeek);
+        window.addEventListener('blur', endSeek);
 
-        // ---------- Polling (guarded against overlap / out-of-order) ----------
+        // =====================================================================
+        // Lyric line selection - runs from any progress value, regardless
+        // of play state, so seeks while paused, live drags and normal
+        // playback all share one path.
+        // =====================================================================
+        function activeIndexFor(progressMs) {
+            let activeIndex = -1;
+            for (let i = 0; i < parsedLines.length; i++) {
+                if (parsedLines[i].startTimeMs <= progressMs) activeIndex = i;
+                else break;
+            }
+            return activeIndex;
+        }
+
+        function syncLyricsToProgress(progressMs) {
+            if (!parsedLines.length) return;
+            const activeIndex = activeIndexFor(progressMs);
+            if (activeIndex === lastActiveIndex) return;
+            lastActiveIndex = activeIndex;
+            const prevText = activeIndex > 0 ? parsedLines[activeIndex - 1].words : "";
+            const activeText = activeIndex >= 0 ? parsedLines[activeIndex].words : "";
+            const nextText = activeIndex + 1 < parsedLines.length ? parsedLines[activeIndex + 1].words : "";
+            applyLines(prevText, activeText, nextText);
+        }
+
+        // =====================================================================
+        // Polling (guarded against overlap / out-of-order), with three
+        // clearly separated failure classes:
+        //   (a) can't reach our own server        -> keep state, retry fast
+        //   (b) server says `transient`           -> keep state, retry fast
+        //       (expired/rejected token - already force-refreshed server
+        //       side -, 403/429/5xx, malformed body, ad/podcast, no item)
+        //   (c) Spotify genuinely reports nothing -> keep state until it has
+        //       been confirmed EMPTY_CONFIRM_COUNT times in a row spanning
+        //       EMPTY_CONFIRM_MS, AND we're CONTROL_GRACE_MS clear of any
+        //       local action. Only then blank.
+        // =====================================================================
         let pollInFlight = false;
         let pollSeq = 0;
         let missCount = 0;
         let transientCount = 0;
-        // How many genuine (non-transient) "nothing playing" responses in
-        // a row we've seen. The screen only ever actually blanks once this
-        // crosses EMPTY_CONFIRM_NEEDED *and* we're outside the grace
-        // window after a local control action - a single genuine-looking
-        // empty response is exactly what a device briefly re-registering
-        // after play/pause/seek/skip looks like, so one alone is never
-        // trusted enough to wipe the last known track off the screen.
-        let confirmedEmptyStreak = 0;
-        const EMPTY_CONFIRM_NEEDED = 3;
-        const CONTROL_GRACE_MS = 4000;
+        let emptyStreak = 0;
+        let emptyStreakStart = 0;
+        let retryTimer = null;
+
+        function scheduleRetry(ms) {
+            clearTimeout(retryTimer);
+            retryTimer = setTimeout(() => pollServer(true), ms);
+        }
+
+        function clearTrackDisplay() {
+            isPlaying = false;
+            updatePlayPauseIcon();
+            applyLines('', '', '');
+            lastActiveIndex = -2;
+            cachedTrackId = "";
+            parsedLines = [];
+            lyricsPending = false;
+            trackDurationMs = 0;
+            setAnchor(0);
+            currentTitleText = '';
+            titleInnerEl.textContent = '';
+            titleInnerEl.classList.remove('marquee');
+            titleEl.classList.remove('marquee-active');
+            releaseLocal();
+            if (!isSeeking) setProgressVisual(0);
+        }
+
+        // Apply a server progress value gently: tiny disagreements (a
+        // poll's worth of latency, Spotify's own reporting jitter) are
+        // eased out over a few polls so the ring never visibly hops;
+        // large ones (a seek made on another device) snap.
+        function applyServerProgress(serverProgressNow) {
+            const ours = currentProgressMs();
+            const delta = serverProgressNow - ours;
+            if (Math.abs(delta) > TIMING.DRIFT_SNAP_MS || anchorTime === 0) {
+                setAnchor(serverProgressNow);
+            } else {
+                setAnchor(ours + delta * TIMING.DRIFT_EASE);
+            }
+        }
 
         async function pollServer(force) {
             if (pollInFlight && !force) return;
             pollInFlight = true;
             const mySeq = ++pollSeq;
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 6000);
+            const timeoutId = setTimeout(() => controller.abort(), TIMING.FETCH_TIMEOUT_MS);
 
             try {
-                const fetchStart = performance.now();
-                const res = await fetch(`/api/now-playing?t=${Date.now()}`, { signal: controller.signal });
+                const fetchStart = nowMs();
+                const have = cachedTrackId && !lyricsPending ? cachedTrackId : '';
+                const res = await fetch(`/api/now-playing?t=${Date.now()}&have=${encodeURIComponent(have)}`, { signal: controller.signal });
                 const data = await res.json();
-                const fetchEnd = performance.now();
+                const fetchEnd = nowMs();
 
-                // A newer request already resolved; discard this stale one.
-                if (mySeq !== pollSeq) return;
+                if (mySeq !== pollSeq) return; // a newer response already landed
 
-                const networkLatency = (fetchEnd - fetchStart) / 2;
+                const oneWayLatency = (fetchEnd - fetchStart) / 2;
                 missCount = 0;
-                if (data.trackId) { transientCount = 0; confirmedEmptyStreak = 0; }
-
-                // Reconcile server truth with an in-flight optimistic
-                // play/pause: trust the optimistic value until either the
-                // server confirms it or the grace window runs out.
-                let effectiveIsPlaying = data.isPlaying;
-                if (optimisticIsPlaying !== null) {
-                    if (data.isPlaying === optimisticIsPlaying || performance.now() > optimisticExpires) {
-                        optimisticIsPlaying = null;
-                        optimisticExpires = 0;
-                    } else {
-                        effectiveIsPlaying = optimisticIsPlaying;
-                    }
-                }
 
                 if (data.trackId) {
-                    // Whether it's actually playing or just paused-but-
-                    // loaded, a track being present is what matters for
-                    // initializing the screen: background color, lyrics
-                    // and title all need to reflect it either way. This
-                    // runs the same regardless of play state so that
-                    // connecting (or refreshing) while a song is paused
-                    // shows that song immediately instead of waiting for
-                    // playback to start.
-                    isPlaying = !!effectiveIsPlaying;
-                    if (!isSeeking && performance.now() > seekGraceUntil) {
-                        serverProgress = data.progressMs;
-                        serverTimestamp = performance.now() - networkLatency;
+                    transientCount = 0;
+                    emptyStreak = 0;
+
+                    // Progress as of *now*, compensating for the half round
+                    // trip since Spotify measured it.
+                    const serverProgressNow = (data.progressMs || 0) + (data.isPlaying ? oneWayLatency : 0);
+                    serverSnap.trackId = data.trackId;
+                    serverSnap.progressMs = serverProgressNow;
+                    serverSnap.isPlaying = !!data.isPlaying;
+                    serverSnap.at = nowMs();
+                    serverSnap.valid = true;
+
+                    const verdict = reconcileLocal(data);
+                    if (verdict === 'hold') {
+                        // Spotify hasn't caught up with what we just told
+                        // it to do. Our own state stays authoritative; ask
+                        // again soon.
+                        if (localAuth.kind !== 'skip') {
+                            trackDurationMs = data.durationMs || trackDurationMs;
+                            setTitle(data.title, data.artist);
+                        }
+                        scheduleRetry(TIMING.RETRY_MS);
+                        return;
                     }
+
+                    const isNewTrack = cachedTrackId !== data.trackId;
                     trackDurationMs = data.durationMs || 0;
-                    updatePlayPauseIcon();
                     setTitle(data.title, data.artist);
 
-                    if (cachedTrackId !== data.trackId) {
+                    if (isNewTrack) {
                         cachedTrackId = data.trackId;
                         parsedLines = data.lines || [];
-                        // Land straight on whatever line is current for
-                        // this track's actual progress, instead of -2
-                        // (which would blank the screen and wait for the
-                        // next progress tick to pick the right line -
-                        // exactly the "nothing shows until playback
-                        // starts" symptom).
+                        lyricsPending = !!data.lyricsPending;
                         lastActiveIndex = -2;
                         applyLines('', '', '');
+                        isPlaying = !!data.isPlaying;
+                        setAnchor(serverProgressNow);
+                        updatePlayPauseIcon();
 
                         if (data.albumArt) {
                             const img = document.getElementById('album-art-hidden');
@@ -1201,80 +1394,67 @@ HTML_TEMPLATE = """
                         } else {
                             document.body.style.backgroundColor = '#121212';
                         }
-
-                        // If we're not actually playing yet (e.g. the
-                        // track was paused when we connected), still show
-                        // the lyric line that matches the current saved
-                        // position right away rather than waiting for the
-                        // animation loop's isPlaying-gated update.
-                        if (!isPlaying && parsedLines.length > 0) {
-                            let activeIndex = -1;
-                            for (let i = 0; i < parsedLines.length; i++) {
-                                if (parsedLines[i].startTimeMs <= data.progressMs) activeIndex = i;
-                                else break;
-                            }
-                            lastActiveIndex = activeIndex;
-                            const prevText = activeIndex > 0 ? parsedLines[activeIndex - 1].words : "";
-                            const activeText = activeIndex >= 0 ? parsedLines[activeIndex].words : "";
-                            const nextText = activeIndex + 1 < parsedLines.length ? parsedLines[activeIndex + 1].words : "";
-                            applyLines(prevText, activeText, nextText);
+                    } else {
+                        // Same track. Lyrics may have just finished loading
+                        // in the background - pick them up without touching
+                        // anything else on screen.
+                        if (lyricsPending && !data.lyricsPending && Array.isArray(data.lines)) {
+                            parsedLines = data.lines;
+                            lyricsPending = false;
+                            lastActiveIndex = -2;
                         }
+                        const wasPlaying = isPlaying;
+                        isPlaying = !!data.isPlaying;
+                        if (wasPlaying !== isPlaying) {
+                            // Play state changed on another device: anchor
+                            // where Spotify says, no easing.
+                            setAnchor(serverProgressNow);
+                        } else {
+                            applyServerProgress(serverProgressNow);
+                        }
+                        updatePlayPauseIcon();
                     }
+
+                    // Land on the right line right now (playing or paused)
+                    // rather than waiting a frame.
+                    if (!isSeeking) syncLyricsToProgress(currentProgressMs());
+
+                    if (lyricsPending) scheduleRetry(TIMING.RETRY_MS);
                 } else if (data.transient) {
-                    // The server hit a hiccup (network blip, token refresh,
-                    // a rejected/expired token, a bad Spotify response) - it
-                    // is explicitly NOT telling us playback stopped. Leave
-                    // everything exactly as it is (last track, lyrics,
-                    // progress keep advancing off the last known-good
-                    // anchor) and just retry sooner than the normal cadence
-                    // so a real recovery shows up fast. This is what keeps
-                    // the screen locked to the last playing song instead of
-                    // going black on a transient error.
+                    // Class (b). Not a statement that playback stopped.
+                    // Keep everything exactly as it is and retry sooner.
                     transientCount++;
-                    // Fast-retry the first several misses to recover almost
-                    // instantly from a blip; beyond that, fall back to the
-                    // normal poll cadence instead of hammering the network
-                    // if something stays down for a while.
-                    if (transientCount <= 15) setTimeout(() => pollServer(true), 200);
+                    emptyStreak = 0;
+                    const wait = data.retryMs ? Math.max(TIMING.RETRY_MS, Math.min(data.retryMs, 5000)) : TIMING.RETRY_MS;
+                    if (transientCount <= TIMING.RETRY_MAX || data.retryMs) scheduleRetry(wait);
                 } else {
-                    // Spotify says there's no active session right now.
-                    // Normally that's the one legitimate reason to blank
-                    // the screen - but if we're still within a few seconds
-                    // of a local control action (play/pause/seek/skip), or
-                    // haven't seen this "empty" result several times in a
-                    // row yet, treat it exactly like a transient hiccup:
-                    // a device briefly re-registering after a command is
-                    // indistinguishable from "nothing is playing" in a
-                    // single snapshot. Only blank once it's been confirmed
-                    // repeatedly *and* we're clear of that window - this is
-                    // what stops a resume-after-pause (or a seek) from
-                    // ever taking the whole display down.
+                    // Class (c). A genuine "no active session" from Spotify.
                     transientCount = 0;
-                    const withinControlGrace = (performance.now() - lastActionAt) < CONTROL_GRACE_MS;
-                    const stillHoldingLastTrack = !!cachedTrackId;
-                    confirmedEmptyStreak++;
-                    if (stillHoldingLastTrack && (withinControlGrace || confirmedEmptyStreak < EMPTY_CONFIRM_NEEDED)) {
-                        setTimeout(() => pollServer(true), 200);
+                    const t = nowMs();
+                    if (emptyStreak === 0) emptyStreakStart = t;
+                    emptyStreak++;
+
+                    if (localAuth.active && localAuth.kind === 'skip' && t <= localAuth.expiresAt) {
+                        // Skipping past the end of a queue / between tracks
+                        // often reads as "nothing playing" for a moment.
+                        scheduleRetry(TIMING.RETRY_MS);
                         return;
                     }
-                    confirmedEmptyStreak = 0;
-                    isPlaying = false;
-                    updatePlayPauseIcon();
-                    applyLines('', '', '');
-                    lastActiveIndex = -1;
-                    cachedTrackId = "";
-                    trackDurationMs = 0;
-                    currentTitleText = '';
-                    titleInnerEl.textContent = '';
-                    if (!isSeeking) setProgressVisual(0);
+
+                    const withinControlGrace = (t - lastActionAt) < TIMING.CONTROL_GRACE_MS;
+                    const confirmedEnough = emptyStreak >= TIMING.EMPTY_CONFIRM_COUNT &&
+                                            (t - emptyStreakStart) >= TIMING.EMPTY_CONFIRM_MS;
+                    if (cachedTrackId && (withinControlGrace || !confirmedEnough)) {
+                        scheduleRetry(TIMING.RETRY_MS);
+                        return;
+                    }
+                    if (cachedTrackId || isPlaying || trackDurationMs) clearTrackDisplay();
+                    emptyStreak = 0;
                 }
             } catch (e) {
-                // Network hiccup talking to our own backend: same
-                // treatment as a transient server response - keep showing
-                // the last known state and retry quickly instead of
-                // silently sitting stuck or blanking out.
+                // Class (a). Our own server is unreachable / timed out.
                 missCount++;
-                if (missCount <= 15) setTimeout(() => pollServer(true), 200);
+                if (missCount <= TIMING.RETRY_MAX) scheduleRetry(TIMING.RETRY_MS);
             } finally {
                 clearTimeout(timeoutId);
                 if (mySeq === pollSeq) pollInFlight = false;
@@ -1282,50 +1462,27 @@ HTML_TEMPLATE = """
         }
 
         layoutRing();
-        setInterval(() => pollServer(false), 400);
+        setInterval(() => pollServer(false), TIMING.POLL_MS);
         pollServer(true);
 
-        let ringFrameCount = 0;
+        // =====================================================================
+        // Animation loop: every frame, ring + lyrics from the same
+        // currentProgressMs(). While paused that value is constant, so the
+        // ring stays frozen at the exact position and the lines stay on
+        // the active line by construction. While dragging it is the drag
+        // position. Local authority (pending play/pause/seek/skip) is
+        // expired here too so a stalled poll can't hold it open forever.
+        // =====================================================================
         function animationLoop() {
-            const currentProgress = isPlaying
-                ? serverProgress + (performance.now() - serverTimestamp)
-                : serverProgress;
+            if (localAuth.active && nowMs() > localAuth.expiresAt) releaseLocal();
 
-            // Drive the progress ring smoothly, except while the user is
-            // actively dragging it (their own drag position is the source
-            // of truth then). Path geometry math (getPointAtLength) is
-            // real work, so it only runs a few times a second - at that
-            // rate the sweep still looks perfectly continuous but costs a
-            // fraction of doing it every single animation frame, which
-            // matters on the underpowered head units this runs on.
-            ringFrameCount++;
-            if (!isSeeking && trackDurationMs > 0 && ringFrameCount % 3 === 0) {
-                setProgressVisual(currentProgress / trackDurationMs);
+            const progress = currentProgressMs();
+            if (!isSeeking && trackDurationMs > 0) {
+                setProgressVisual(progress / trackDurationMs);
             }
-
-            if (isPlaying && parsedLines.length > 0) {
-                let activeIndex = -1;
-                for (let i = 0; i < parsedLines.length; i++) {
-                    if (parsedLines[i].startTimeMs <= currentProgress) {
-                        activeIndex = i;
-                    } else {
-                        break;
-                    }
-                }
-
-                if (activeIndex !== lastActiveIndex) {
-                    lastActiveIndex = activeIndex;
-
-                    const prevText = activeIndex > 0 ? parsedLines[activeIndex - 1].words : "";
-                    const activeText = activeIndex >= 0 ? parsedLines[activeIndex].words : "";
-                    const nextText = activeIndex + 1 < parsedLines.length ? parsedLines[activeIndex + 1].words : "";
-
-                    applyLines(prevText, activeText, nextText);
-                }
+            if (!isSeeking && parsedLines.length > 0) {
+                syncLyricsToProgress(progress);
             }
-            // When paused, intentionally do nothing else here: the lyric
-            // lines stay exactly as they were, frozen, rather than
-            // disappearing.
             requestAnimationFrame(animationLoop);
         }
         requestAnimationFrame(animationLoop);
@@ -1334,6 +1491,35 @@ HTML_TEMPLATE = """
 </body>
 </html>
 """
+
+
+# ---------------------------------------------------------------------------
+# One keep-alive HTTP session for every outbound call (Spotify + LRCLIB).
+# A bare requests.get() opens a brand-new TCP+TLS connection every time,
+# which on a 400 ms poll cadence added a visible 50-150 ms to every single
+# poll and every control tap. requests.Session reuses connections.
+# ---------------------------------------------------------------------------
+HTTP = requests.Session()
+HTTP.headers.update({"User-Agent": "InCarLyricsApp/1.0"})
+
+SPOTIFY_OK = (200, 202, 204)
+
+
+def _spotify_error(res):
+    """Short, stable error code for a failed Spotify call."""
+    reason = ""
+    try:
+        body = res.json() or {}
+        err = body.get("error") or {}
+        if isinstance(err, dict):
+            reason = err.get("reason") or err.get("message") or ""
+    except Exception:
+        pass
+    code = f"spotify_{res.status_code}"
+    if reason:
+        code += f":{str(reason)[:60]}"
+    return code
+
 
 @app.route('/')
 def index():
@@ -1401,7 +1587,7 @@ def callback():
     auth_base64 = str(base64.b64encode(f"{client_id}:{client_secret}".encode("utf-8")), "utf-8")
 
     try:
-        res = requests.post(
+        res = HTTP.post(
             "https://accounts.spotify.com/api/token",
             headers={
                 "Authorization": f"Basic {auth_base64}",
@@ -1411,7 +1597,8 @@ def callback():
                 "grant_type": "authorization_code",
                 "code": code,
                 "redirect_uri": redirect_uri
-            }
+            },
+            timeout=8
         )
 
         if not res.ok:
@@ -1437,7 +1624,7 @@ def get_valid_token(force=False):
 
     auth_base64 = str(base64.b64encode(f"{client_id}:{client_secret}".encode("utf-8")), "utf-8")
     try:
-        res = requests.post(
+        res = HTTP.post(
             "https://accounts.spotify.com/api/token",
             headers={"Authorization": f"Basic {auth_base64}", "Content-Type": "application/x-www-form-urlencoded"},
             data={"grant_type": "refresh_token", "refresh_token": session.get('refresh_token', '')},
@@ -1480,20 +1667,10 @@ def parse_lrc(lrc_text):
 
 def wrap_words(text, max_chars):
     """Word-wrap a single lyric line into chunks that each fit comfortably
-    on one display line.
-
-    A naive greedy fill (pack words onto the current chunk until the next
-    one wouldn't fit, then start a new chunk) tends to dump whatever is
-    left over into a final chunk by itself - often just one short word -
-    once the preceding chunks have already eaten most of max_chars. That
-    lone-word chunk then gets its own timed sub-line on screen, which reads
-    as a jarring "just one word" flash. This still greedy-fills first (that
-    part was never the problem), but then rebalances afterwards: any chunk
-    that ended up as a single word gets folded into whichever neighbouring
-    chunk it fits best against, even if that neighbour then runs a bit past
-    max_chars - the client always shrinks font size to fit whatever text
-    actually lands on a line, so a soft, occasional overrun here is far
-    less noticeable than a whole display line holding one word."""
+    on one display line, then rebalance so no chunk is left holding a
+    single lonely word (the client shrinks font size to fit whatever lands
+    on a line, so a soft overrun is far less noticeable than a one-word
+    display line)."""
     words = text.split()
     if not words:
         return [text]
@@ -1539,10 +1716,8 @@ def wrap_words(text, max_chars):
     return chunks or [text]
 
 def split_long_lines(lines, max_chars=MAX_LINE_CHARS):
-    """Take LRCLIB's line-level synced lyrics and, for any line that's much
-    longer than a comfortable display line, split it into several timed
-    sub-lines with proportionally interpolated timestamps. Short lines pass
-    through untouched."""
+    """Split any line much longer than a comfortable display line into
+    several timed sub-lines with proportionally interpolated timestamps."""
     if not lines:
         return []
 
@@ -1578,29 +1753,6 @@ def split_long_lines(lines, max_chars=MAX_LINE_CHARS):
 
     return result
 
-# Lyrics for a given track never change, but /api/now-playing is polled
-# every 700ms and also re-hit immediately after every control tap (play,
-# pause, seek, next, previous) so the UI can refresh right away. Without a
-# cache, every single one of those calls was doing a live network round
-# trip to LRCLIB - which is what actually caused the "lag when pausing /
-# using controls" (not client-side rendering). The cache only lets LRCLIB
-# get hit once per track, keyed by Spotify's track id.
-LYRICS_CACHE = {}
-LYRICS_CACHE_MAX = 100
-
-def get_cached_lyrics(track_id, track_name, artist_name):
-    if track_id and track_id in LYRICS_CACHE:
-        return LYRICS_CACHE[track_id]
-
-    lines = fetch_synced_lyrics(track_name, artist_name)
-
-    if track_id:
-        if len(LYRICS_CACHE) >= LYRICS_CACHE_MAX:
-            LYRICS_CACHE.pop(next(iter(LYRICS_CACHE)))
-        LYRICS_CACHE[track_id] = lines
-
-    return lines
-
 def fetch_synced_lyrics(track_name, artist_name):
     cleaned_name = re.sub(
         r'\s*[\(\[].*?(feat\.|ft\.|remaster|version|mix).*?[\)\]]',
@@ -1612,10 +1764,9 @@ def fetch_synced_lyrics(track_name, artist_name):
     ).strip()
 
     try:
-        search_res = requests.get(
+        search_res = HTTP.get(
             "https://lrclib.net/api/search",
             params={"q": f"{cleaned_name} {artist_name}"},
-            headers={"User-Agent": "InCarLyricsApp/1.0"},
             timeout=4
         )
         if search_res.ok:
@@ -1630,41 +1781,95 @@ def fetch_synced_lyrics(track_name, artist_name):
 
     return []
 
+# ---------------------------------------------------------------------------
+# Lyrics cache, filled in the background.
+#
+# The old code fetched LRCLIB synchronously inside /api/now-playing the
+# first time a track was seen - so the very poll that announces a new song
+# stalled for up to the LRCLIB timeout (4 s) before the client could show
+# the title, colour or ring. Now the first poll for a new track returns its
+# metadata immediately with `lyricsPending: true`, a daemon thread fetches
+# the lyrics, and a following poll delivers them. Lyrics for a track never
+# change, so LRCLIB is still hit at most once per track id.
+# ---------------------------------------------------------------------------
+LYRICS_CACHE = {}          # track_id -> list of lines, or _PENDING while fetching
+LYRICS_CACHE_MAX = 100
+LYRICS_LOCK = threading.Lock()
+_PENDING = object()
+
+def _fetch_lyrics_into_cache(track_id, track_name, artist_name):
+    lines = []
+    try:
+        lines = fetch_synced_lyrics(track_name, artist_name)
+    except Exception:
+        lines = []
+    finally:
+        with LYRICS_LOCK:
+            LYRICS_CACHE[track_id] = lines
+
+def get_cached_lyrics(track_id, track_name, artist_name):
+    """Returns (lines, pending). `lines` is [] while pending."""
+    if not track_id:
+        return [], False
+
+    with LYRICS_LOCK:
+        cached = LYRICS_CACHE.get(track_id)
+        if cached is _PENDING:
+            return [], True
+        if cached is not None:
+            return cached, False
+        # Evict the oldest *finished* entry if we're full.
+        if len(LYRICS_CACHE) >= LYRICS_CACHE_MAX:
+            for k in list(LYRICS_CACHE.keys()):
+                if LYRICS_CACHE[k] is not _PENDING:
+                    LYRICS_CACHE.pop(k, None)
+                    break
+        LYRICS_CACHE[track_id] = _PENDING
+
+    t = threading.Thread(
+        target=_fetch_lyrics_into_cache,
+        args=(track_id, track_name, artist_name),
+        daemon=True
+    )
+    t.start()
+    return [], True
+
 
 @app.route('/api/control', methods=['POST'])
 def control():
     token = get_valid_token()
     if not token:
-        return jsonify({"success": False, "error": "Not logged in"})
+        return jsonify({"success": False, "error": "not_logged_in"})
 
     payload = request.get_json(silent=True) or {}
     action = payload.get('action')
+    headers = {"Authorization": f"Bearer {token}"}
+
+    def with_refresh(call):
+        """Run a Spotify call; on 401 force one token refresh and retry."""
+        res = call(headers)
+        if res.status_code == 401:
+            fresh = get_valid_token(force=True)
+            if fresh:
+                res = call({"Authorization": f"Bearer {fresh}"})
+        return res
 
     try:
         if action in ('play', 'pause'):
-            # The client already knows whether playback is playing or paused
-            # from its own polling, so it tells us the target state directly.
-            # This avoids an extra GET /me/player round trip (which also
-            # needs a broader scope than reading currently-playing does) and
-            # the staleness/race that round trip could introduce.
-            res = requests.put(
-                f"https://api.spotify.com/v1/me/player/{action}",
-                headers={"Authorization": f"Bearer {token}"},
-                timeout=5
-            )
-            if res.status_code in (200, 202, 204):
+            # The client tells us the exact target state it already flipped
+            # to optimistically - no extra state-read round trip, no race.
+            res = with_refresh(lambda h: HTTP.put(
+                f"https://api.spotify.com/v1/me/player/{action}", headers=h, timeout=5))
+            if res.status_code in SPOTIFY_OK:
                 return jsonify({"success": True})
-            return jsonify({"success": False, "error": f"spotify_{res.status_code}"})
+            return jsonify({"success": False, "error": _spotify_error(res), "status": res.status_code})
 
         elif action in ('next', 'previous'):
-            res = requests.post(
-                f"https://api.spotify.com/v1/me/player/{action}",
-                headers={"Authorization": f"Bearer {token}"},
-                timeout=5
-            )
-            if res.status_code in (200, 202, 204):
+            res = with_refresh(lambda h: HTTP.post(
+                f"https://api.spotify.com/v1/me/player/{action}", headers=h, timeout=5))
+            if res.status_code in SPOTIFY_OK:
                 return jsonify({"success": True})
-            return jsonify({"success": False, "error": f"spotify_{res.status_code}"})
+            return jsonify({"success": False, "error": _spotify_error(res), "status": res.status_code})
 
         elif action == 'seek':
             position_ms = payload.get('positionMs')
@@ -1672,113 +1877,139 @@ def control():
                 position_ms = max(0, int(position_ms))
             except (TypeError, ValueError):
                 return jsonify({"success": False, "error": "bad_position"})
-            res = requests.put(
+            # The status is checked, not fire-and-forget: 403 (restricted
+            # device / premium required), 404 (no active device) and 429
+            # are all real, common ways a seek silently "does nothing".
+            res = with_refresh(lambda h: HTTP.put(
                 "https://api.spotify.com/v1/me/player/seek",
-                params={"position_ms": position_ms},
-                headers={"Authorization": f"Bearer {token}"},
-                timeout=5
-            )
-            if res.status_code in (200, 202, 204):
-                return jsonify({"success": True})
-            return jsonify({"success": False, "error": f"spotify_{res.status_code}"})
-    except Exception as e:
+                params={"position_ms": position_ms}, headers=h, timeout=5))
+            if res.status_code in SPOTIFY_OK:
+                return jsonify({"success": True, "positionMs": position_ms})
+            return jsonify({"success": False, "error": _spotify_error(res), "status": res.status_code})
+    except Exception:
         return jsonify({"success": False, "error": "network_error"})
 
     return jsonify({"success": False, "error": "unknown_action"})
 
+
+def _transient(**extra):
+    body = {"isPlaying": False, "trackId": None, "transient": True}
+    body.update(extra)
+    return jsonify(body)
+
+def _empty():
+    # Spotify itself confirmed there's no active session. The client still
+    # applies its own confirmation rules before it ever blanks the screen.
+    return jsonify({"isPlaying": False, "trackId": None})
+
 @app.route('/api/now-playing')
 def now_playing():
-    # "transient": True on any of these responses tells the client this
-    # is a hiccup (network blip, expired/rejected token, Spotify rate
-    # limit, a bad response body) rather than Spotify genuinely reporting
-    # nothing is playing. The client keeps showing whatever it already
-    # had on a transient response instead of blanking the screen - it
-    # only blanks when Spotify itself confirms there's no active session
-    # (a real 204, or a 200 with an empty player object), which is the
-    # "Spotify isn't open" case. That split is what keeps the display
-    # locked to the last playing song through momentary poll failures
-    # instead of going black and getting stuck there.
+    # Three distinct outcomes, so the client can treat them differently:
+    #   - a track                      -> normal payload
+    #   - {"transient": true}          -> a hiccup (network, token, 403/429/
+    #                                     5xx, malformed body, ad/podcast,
+    #                                     item missing). NOT "stopped".
+    #   - {"trackId": null} (no flag)  -> Spotify genuinely reports no active
+    #                                     session (204 / empty player object)
     token = get_valid_token()
     if not token:
-        return jsonify({"isPlaying": False, "trackId": None, "transient": True})
+        return _transient(reason="no_token")
 
-    # /v1/me/player (rather than /v1/me/player/currently-playing) is used
-    # here because it reports the full playback state tied to the active
-    # device - including a track that's loaded but paused - as long as a
-    # device session exists at all. That's what lets the very first poll
-    # right after connecting show whatever track was already loaded
-    # (playing or paused) instead of staying blank until a new song starts.
+    have = request.args.get('have', '')
+
     def fetch_player(tok):
-        return requests.get(
+        return HTTP.get(
             "https://api.spotify.com/v1/me/player",
+            params={"additional_types": "track,episode"},
             headers={"Authorization": f"Bearer {tok}"},
             timeout=4
         )
 
     try:
         player_res = fetch_player(token)
-        # A 401 here means the access token we had was rejected even
-        # though we thought it was still valid (clock skew, a token
-        # revoked early, etc). One forced refresh-and-retry recovers
-        # from that immediately instead of surfacing a blank screen and
-        # waiting for the next poll to happen to fix itself.
         if player_res.status_code == 401:
+            # Token rejected although we believed it valid (clock skew,
+            # revoked early). One forced refresh-and-retry, right now.
             fresh_token = get_valid_token(force=True)
             if fresh_token:
                 player_res = fetch_player(fresh_token)
     except Exception:
-        return jsonify({"isPlaying": False, "trackId": None, "transient": True})
+        return _transient(reason="network")
 
     if player_res.status_code == 204:
-        # No active Spotify Connect session at all - Spotify itself isn't
-        # open/playing anywhere. This is the one genuine "nothing to show".
-        return jsonify({"isPlaying": False, "trackId": None})
+        return _empty()
+
+    if player_res.status_code == 429:
+        retry_ms = 1000
+        try:
+            retry_ms = int(float(player_res.headers.get('Retry-After', '1'))) * 1000
+        except (TypeError, ValueError):
+            pass
+        return _transient(reason="rate_limited", retryMs=max(250, min(retry_ms, 10000)))
 
     if not player_res.ok:
-        # 401/403/429/5xx - Spotify or our own request failed, not the
-        # same thing as "nothing is playing". Don't blank on this.
-        return jsonify({"isPlaying": False, "trackId": None, "transient": True})
+        return _transient(reason=f"spotify_{player_res.status_code}")
 
     try:
         player = player_res.json()
     except Exception:
-        return jsonify({"isPlaying": False, "trackId": None, "transient": True})
+        return _transient(reason="bad_json")
 
-    if not player:
-        # A 200 with a genuinely empty body is Spotify's other way of
-        # saying no active device/session - treat it the same as 204.
-        return jsonify({"isPlaying": False, "trackId": None})
+    if not player or not isinstance(player, dict):
+        return _empty()
 
-    item = player.get('item') or {}
+    item = player.get('item')
+    playing_type = player.get('currently_playing_type') or 'track'
+    if item is None or not isinstance(item, dict):
+        # A player object with no item: mid-transition between tracks, an
+        # ad break, or a private/unavailable item. Not proof of a stop.
+        return _transient(reason="no_item")
+    if playing_type not in ('track', 'episode'):
+        return _transient(reason=playing_type)
+
     track_id = item.get('id') or ""
     track_name = item.get('name') or ""
     artists = item.get('artists') or []
-    artist_name = artists[0].get('name', '') if artists and isinstance(artists[0], dict) else ""
+    if artists and isinstance(artists[0], dict):
+        artist_name = artists[0].get('name', '')
+    else:
+        show = item.get('show') or {}
+        artist_name = show.get('name', '') if isinstance(show, dict) else ""
 
-    if not track_name or not artist_name:
-        # The player object came back but without a usable track - an odd
-        # transient shape (e.g. mid-transition between tracks), not proof
-        # playback stopped. Keep whatever the client already has.
-        return jsonify({"isPlaying": False, "trackId": None, "transient": True})
+    if not track_name or not track_id:
+        return _transient(reason="no_track")
 
-    album = item.get('album') or {}
-    images = album.get('images') or []
+    album = item.get('album') or item.get('show') or {}
+    images = album.get('images') or item.get('images') or []
     album_art = images[0].get('url', '') if images and isinstance(images[0], dict) else ""
 
-    lines = get_cached_lyrics(track_id, track_name, artist_name)
     duration_ms = item.get('duration_ms') or 0
+    progress_ms = player.get('progress_ms') or 0
 
-    return jsonify({
-        "isPlaying": player.get('is_playing', False),
-        "progressMs": player.get('progress_ms', 0),
+    body = {
+        "isPlaying": bool(player.get('is_playing', False)),
+        "progressMs": progress_ms,
         "durationMs": duration_ms,
         "title": track_name,
         "artist": artist_name,
         "albumArt": album_art,
         "trackId": track_id,
-        "lines": lines
-    })
+        "lyricsPending": False
+    }
+
+    if playing_type == 'episode' or not artist_name:
+        # Podcasts etc: no synced lyrics to look for.
+        body["lines"] = []
+        return jsonify(body)
+
+    lines, pending = get_cached_lyrics(track_id, track_name, artist_name)
+    body["lyricsPending"] = pending
+    # The client already holds the lines for the track it names in `have`
+    # - don't re-send a multi-KB lyric list on every 400 ms poll.
+    if pending or have != track_id:
+        body["lines"] = lines
+    return jsonify(body)
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port, threaded=True)
