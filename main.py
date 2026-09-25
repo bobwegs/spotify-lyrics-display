@@ -37,10 +37,14 @@ HTML_TEMPLATE = """
            the CSS crossfade and the JS swap logic share one definition.
            The value here is only a fallback for the first paint. */
         :root {
-            --roll-ms: 380ms;
+            --roll-ms: 320ms;
             --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
             --ease-std: cubic-bezier(0.4, 0, 0.2, 1);
             --lyrics-h: calc(100dvh - 96px);
+            /* Slot heights - written per track by the script (see
+               layoutSlots) from the song's own line sizes. */
+            --active-h: min(115px, calc(var(--lyrics-h) * 0.26));
+            --adj-h: min(46px, calc(var(--lyrics-h) * 0.13));
         }
 
         @keyframes rise-in {
@@ -67,7 +71,7 @@ HTML_TEMPLATE = """
             width: 100vw;
             margin: 0;
             overflow: hidden;
-            transition: background-color 2.2s cubic-bezier(0.4, 0, 0.2, 1),
+            transition: background-color 1.4s var(--ease-std),
                         opacity 0.2s ease;
         }
 
@@ -173,23 +177,26 @@ HTML_TEMPLATE = """
             align-items: center;
             justify-content: center;
             text-align: center;
-            gap: 2.5vh;
+            gap: 1.2vh;
             z-index: 10;
             box-sizing: border-box;
         }
 
-        /* Every slot has a FIXED height (the same fractions the
-           auto-fit sizing caps text at), so the three lines never move
-           when a neighbour is empty (first/last line of a song) or when
-           a line's font-size differs from the previous one. The active
-           line is always at exactly the same place on screen. */
+        /* Every slot has a FIXED height for the duration of a track, so
+           the three lines never move when a neighbour is empty (first/
+           last line of a song) or when one line is shorter than the
+           last. The height is fitted to THIS song's lines (the median
+           line's natural size) so the stack stays tight; the few lines
+           that would be bigger are capped to the slot instead. A new
+           track morphs the heights rather than snapping them. */
         .lyric-line {
             width: 100%;
             position: relative;
             flex: 0 0 auto;
+            transition: height var(--roll-ms) var(--ease-out);
         }
-        .adjacent-line { height: calc(var(--lyrics-h) * 0.16); }
-        .active-line   { height: calc(var(--lyrics-h) * 0.30); }
+        .adjacent-line { height: var(--adj-h); }
+        .active-line   { height: var(--active-h); }
 
         /* Two stacked layers per slot. A line change is a true
            crossfade: the incoming layer fades/slides in while the
@@ -567,8 +574,10 @@ HTML_TEMPLATE = """
         // --roll-ms custom property below) so JS and CSS can never drift.
         // =====================================================================
         const TIMING = {
-            ROLL_MS: 380,              // lyric crossfade (both layers move at once)
-            TITLE_SWAP_MS: 180,        // title fade-out before the new title is written
+            ROLL_MS: 320,              // lyric crossfade (both layers move at once)
+            LYRIC_LEAD_MS: 130,        // start the roll this early so the incoming line is
+                                       // fully readable exactly when the word is sung
+            TITLE_SWAP_MS: 150,        // title fade-out before the new title is written
             POLL_MS: 400,              // steady-state poll cadence
             RETRY_MS: 250,             // fast retry after a transient / ignored response
             RETRY_MAX: 20,             // fast retries in a row before falling back to POLL_MS
@@ -870,6 +879,7 @@ HTML_TEMPLATE = """
         const LYRIC_LETTER_SPACING = 1.5; // px, matches body's letter-spacing
         const LYRIC_HPAD = 10;            // px, matches .lyric-inner's own padding
         const LYRIC_SAFETY = 8;           // px, extra margin against rounding
+        const LINE_HEIGHT = 1.15;         // matches .lyric-inner's line-height
 
         const measureCanvas = document.createElement('canvas');
         const measureCtx = measureCanvas.getContext('2d');
@@ -884,8 +894,9 @@ HTML_TEMPLATE = """
             return measureCtx.measureText(text.toUpperCase()).width || 1;
         }
 
-        function computeFontSize(text, isActive) {
-            const maxSize = isActive ? ACTIVE_MAX : ADJACENT_MAX;
+        // sizeCap (optional): the slot's current maximum font size.
+        function computeFontSize(text, isActive, sizeCap) {
+            const maxSize = Math.min(isActive ? ACTIVE_MAX : ADJACENT_MAX, sizeCap || Infinity);
             const minSize = isActive ? ACTIVE_MIN : ADJACENT_MIN;
             const spacingExtra = (text || '').length * LYRIC_LETTER_SPACING;
             const rawMaxWidth = containerEl.clientWidth * 0.92 - LYRIC_HPAD * 2 - spacingExtra - LYRIC_SAFETY;
@@ -897,9 +908,8 @@ HTML_TEMPLATE = """
 
             let size = (availWidth / refWidth) * REF_SIZE;
 
-            const maxHeight = containerEl.clientHeight * (isActive ? 0.30 : 0.16);
-            const heightCap = maxHeight / 1.15;
-            size = Math.min(size, heightCap);
+            const maxHeight = containerEl.clientHeight * (isActive ? 0.26 : 0.13);
+            size = Math.min(size, maxHeight / LINE_HEIGHT);
 
             size = Math.min(size, maxSize);
             size = Math.max(size, minSize);
@@ -953,7 +963,7 @@ HTML_TEMPLATE = """
         function makeSlot(id, opacity, isActive, travel) {
             const el = document.getElementById(id);
             const layers = Array.from(el.querySelectorAll('.lyric-layer'));
-            return { el, layers, current: 0, opacity, isActive, travel, text: null, placeholder: false, raf: null };
+            return { el, layers, current: 0, opacity, isActive, travel, text: null, placeholder: false, raf: null, sizeCap: 0 };
         }
         const slots = {
             'prev-line': makeSlot('prev-line', OPACITY_ADJACENT, false, 8),
@@ -963,6 +973,33 @@ HTML_TEMPLATE = """
         let rollDirection = 1;
 
         function currentLayer(slot) { return slot.layers[slot.current]; }
+
+        // Fit the slot heights to the current song. The natural size of
+        // every line is computed once (cheap canvas measurement); the
+        // median becomes the slot's font cap, so the stack is as tight as
+        // this song's typical line and every line renders at (nearly) the
+        // same size - the handful of very short lines that would have
+        // ballooned are held to the cap instead.
+        function layoutSlots() {
+            const activeSizes = [], adjSizes = [];
+            for (const line of parsedLines) {
+                if (!line.words) continue;
+                activeSizes.push(computeFontSize(line.words, true).size);
+                adjSizes.push(computeFontSize(line.words, false).size);
+            }
+            const median = (arr, fallback) => {
+                if (!arr.length) return fallback;
+                arr.sort((a, b) => a - b);
+                return arr[Math.floor(arr.length * 0.5)];
+            };
+            const activeCap = median(activeSizes, computeFontSize('', true).size);
+            const adjCap = median(adjSizes, computeFontSize('', false).size);
+            slots['active-line'].sizeCap = activeCap;
+            slots['prev-line'].sizeCap = adjCap;
+            slots['next-line'].sizeCap = adjCap;
+            containerEl.style.setProperty('--active-h', Math.ceil(activeCap * LINE_HEIGHT) + 'px');
+            containerEl.style.setProperty('--adj-h', Math.ceil(adjCap * LINE_HEIGHT) + 'px');
+        }
 
         // direction: +1 forward (default), -1 backward
         function applyLines(prevText, activeText, nextText, direction) {
@@ -981,13 +1018,13 @@ HTML_TEMPLATE = """
         }
 
         const PLACEHOLDER_SIZE = 13;
-        function applySizedText(inner, text, isActive, placeholder) {
+        function applySizedText(inner, text, isActive, placeholder, sizeCap) {
             inner.textContent = text;
             if (placeholder) {
                 inner.style.fontSize = PLACEHOLDER_SIZE + 'px';
                 return;
             }
-            const { size: guessSize, availWidth } = computeFontSize(text, isActive);
+            const { size: guessSize, availWidth } = computeFontSize(text, isActive, sizeCap);
             if (!text) {
                 inner.style.fontSize = guessSize + 'px';
                 return;
@@ -1015,7 +1052,7 @@ HTML_TEMPLATE = """
             incoming.style.opacity = '0';
             incoming.style.transform = `translate3d(0, ${dir * travel}px, 0)`;
             incoming.classList.toggle('is-placeholder', placeholder);
-            applySizedText(incoming.firstElementChild, text, slot.isActive, placeholder);
+            applySizedText(incoming.firstElementChild, text, slot.isActive, placeholder, slot.sizeCap);
             incoming.classList.add('is-current');
             outgoing.classList.remove('is-current');
             void incoming.offsetHeight; // commit the staged state
@@ -1032,9 +1069,10 @@ HTML_TEMPLATE = """
         }
 
         function refitCurrentLines() {
+            layoutSlots();
             Object.values(slots).forEach(slot => {
                 if (!slot.text || slot.placeholder) return;
-                applySizedText(currentLayer(slot).firstElementChild, slot.text, slot.isActive, false);
+                applySizedText(currentLayer(slot).firstElementChild, slot.text, slot.isActive, false, slot.sizeCap);
             });
         }
 
@@ -1379,9 +1417,13 @@ HTML_TEMPLATE = """
         // playback all share one path.
         // =====================================================================
         function activeIndexFor(progressMs) {
+            // Lines are chosen slightly ahead of the clock: the roll takes
+            // ROLL_MS, so starting it LYRIC_LEAD_MS early means the new
+            // line is already there when the word actually lands.
+            const t = progressMs + TIMING.LYRIC_LEAD_MS;
             let activeIndex = -1;
             for (let i = 0; i < parsedLines.length; i++) {
-                if (parsedLines[i].startTimeMs <= progressMs) activeIndex = i;
+                if (parsedLines[i].startTimeMs <= t) activeIndex = i;
                 else break;
             }
             return activeIndex;
@@ -1434,10 +1476,11 @@ HTML_TEMPLATE = """
         function clearTrackDisplay() {
             isPlaying = false;
             updatePlayPauseIcon();
-            showPlaceholder('Nothing playing');
             lastActiveIndex = -2;
             cachedTrackId = "";
             parsedLines = [];
+            layoutSlots();
+            showPlaceholder('Nothing playing');
             lyricsPending = false;
             trackDurationMs = 0;
             setAnchor(0);
@@ -1523,6 +1566,7 @@ HTML_TEMPLATE = """
                         parsedLines = data.lines || [];
                         lyricsPending = !!data.lyricsPending;
                         lastActiveIndex = -2;
+                        layoutSlots();
                         if (!parsedLines.length) applyLines('', '', '', 1);
                         isPlaying = !!data.isPlaying;
                         setAnchor(serverProgressNow);
@@ -1553,6 +1597,7 @@ HTML_TEMPLATE = """
                             parsedLines = data.lines;
                             lyricsPending = false;
                             lastActiveIndex = -2;
+                            layoutSlots();
                         }
                         const wasPlaying = isPlaying;
                         isPlaying = !!data.isPlaying;
@@ -1613,6 +1658,10 @@ HTML_TEMPLATE = """
         }
 
         layoutRing();
+        // Something is on screen from the very first frame - never a
+        // black page while the first Spotify round trip is in flight.
+        layoutSlots();
+        showPlaceholder('Connecting');
         setInterval(() => pollServer(false), TIMING.POLL_MS);
         pollServer(true);
 
@@ -2077,12 +2126,14 @@ def now_playing():
         )
 
     try:
+        spotify_t0 = time.time()
         player_res = fetch_player(token)
         if player_res.status_code == 401:
             # Token rejected although we believed it valid (clock skew,
             # revoked early). One forced refresh-and-retry, right now.
             fresh_token = get_valid_token(force=True)
             if fresh_token:
+                spotify_t0 = time.time()
                 player_res = fetch_player(fresh_token)
     except Exception:
         return _transient(reason="network")
@@ -2136,6 +2187,11 @@ def now_playing():
 
     duration_ms = item.get('duration_ms') or 0
     progress_ms = player.get('progress_ms') or 0
+    # Spotify measured progress_ms when it built its response, about half
+    # a server<->Spotify round trip ago; the browser compensates for its
+    # own half round trip to us on top of this.
+    if player.get('is_playing'):
+        progress_ms += int((time.time() - spotify_t0) * 500)
 
     body = {
         "isPlaying": bool(player.get('is_playing', False)),
