@@ -156,8 +156,8 @@ HTML_TEMPLATE = """
             line-height: 1.15;
             opacity: 0;
             will-change: opacity, font-size;
-            transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1),
-                        font-size 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: opacity 0.13s cubic-bezier(0.4, 0, 0.2, 1),
+                        font-size 0.13s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         .adjacent-line .lyric-inner {
@@ -517,7 +517,19 @@ HTML_TEMPLATE = """
         let optimisticIsPlaying = null;
         let optimisticExpires = 0;
 
+        // Any local control action (play/pause/next/previous/seek) is
+        // followed by a short window where Spotify's own device/session
+        // state is known to flap - it can briefly report "nothing
+        // playing" (a real 204, not a network error) while the command
+        // is still propagating. lastActionAt marks that window so the
+        // poller can tell "Spotify momentarily hiccupped right after I
+        // told it to do something" apart from "the user actually stopped
+        // playback a while ago", and never blanks the screen for the
+        // former.
+        let lastActionAt = 0;
+
         async function sendControl(action) {
+            lastActionAt = performance.now();
             requestWakeLock();
             try {
                 const res = await fetch('/api/control', {
@@ -707,7 +719,13 @@ HTML_TEMPLATE = """
         // ---------- Coordinated crossfade text swap ----------
         // All three slots are computed together before anything is touched,
         // so prev/active/next never briefly show mismatched sizes.
-        const FADE_MS = 90;
+        // Matches the .lyric-inner CSS transition duration exactly (see
+        // the <style> block above) - the previous mismatch (this swap
+        // firing well before or after the CSS fade actually finished) is
+        // what caused the visible "jump" mid-crossfade instead of a clean
+        // fade. Keeping these two numbers identical is what makes the
+        // line change look smooth.
+        const FADE_MS = 130;
         const slots = {
             'prev-line': { inner: document.querySelector('#prev-line .lyric-inner'), opacity: OPACITY_ADJACENT, isActive: false },
             'active-line': { inner: document.querySelector('#active-line .lyric-inner'), opacity: OPACITY_ACTIVE, isActive: true },
@@ -1053,6 +1071,7 @@ HTML_TEMPLATE = """
         }
 
         async function sendSeek(positionMs) {
+            lastActionAt = performance.now();
             requestWakeLock();
             try {
                 await fetch('/api/control', {
@@ -1091,6 +1110,16 @@ HTML_TEMPLATE = """
         let pollSeq = 0;
         let missCount = 0;
         let transientCount = 0;
+        // How many genuine (non-transient) "nothing playing" responses in
+        // a row we've seen. The screen only ever actually blanks once this
+        // crosses EMPTY_CONFIRM_NEEDED *and* we're outside the grace
+        // window after a local control action - a single genuine-looking
+        // empty response is exactly what a device briefly re-registering
+        // after play/pause/seek/skip looks like, so one alone is never
+        // trusted enough to wipe the last known track off the screen.
+        let confirmedEmptyStreak = 0;
+        const EMPTY_CONFIRM_NEEDED = 3;
+        const CONTROL_GRACE_MS = 4000;
 
         async function pollServer(force) {
             if (pollInFlight && !force) return;
@@ -1110,7 +1139,7 @@ HTML_TEMPLATE = """
 
                 const networkLatency = (fetchEnd - fetchStart) / 2;
                 missCount = 0;
-                if (data.trackId) transientCount = 0;
+                if (data.trackId) { transientCount = 0; confirmedEmptyStreak = 0; }
 
                 // Reconcile server truth with an in-flight optimistic
                 // play/pause: trust the optimistic value until either the
@@ -1208,10 +1237,27 @@ HTML_TEMPLATE = """
                     // if something stays down for a while.
                     if (transientCount <= 15) setTimeout(() => pollServer(true), 200);
                 } else {
-                    // Spotify itself confirmed there's no active session
-                    // anywhere (Spotify isn't open / nothing loaded). This
-                    // is the one legitimate reason to blank the screen.
+                    // Spotify says there's no active session right now.
+                    // Normally that's the one legitimate reason to blank
+                    // the screen - but if we're still within a few seconds
+                    // of a local control action (play/pause/seek/skip), or
+                    // haven't seen this "empty" result several times in a
+                    // row yet, treat it exactly like a transient hiccup:
+                    // a device briefly re-registering after a command is
+                    // indistinguishable from "nothing is playing" in a
+                    // single snapshot. Only blank once it's been confirmed
+                    // repeatedly *and* we're clear of that window - this is
+                    // what stops a resume-after-pause (or a seek) from
+                    // ever taking the whole display down.
                     transientCount = 0;
+                    const withinControlGrace = (performance.now() - lastActionAt) < CONTROL_GRACE_MS;
+                    const stillHoldingLastTrack = !!cachedTrackId;
+                    confirmedEmptyStreak++;
+                    if (stillHoldingLastTrack && (withinControlGrace || confirmedEmptyStreak < EMPTY_CONFIRM_NEEDED)) {
+                        setTimeout(() => pollServer(true), 200);
+                        return;
+                    }
+                    confirmedEmptyStreak = 0;
                     isPlaying = false;
                     updatePlayPauseIcon();
                     applyLines('', '', '');
@@ -1236,7 +1282,7 @@ HTML_TEMPLATE = """
         }
 
         layoutRing();
-        setInterval(() => pollServer(false), 700);
+        setInterval(() => pollServer(false), 400);
         pollServer(true);
 
         let ringFrameCount = 0;
