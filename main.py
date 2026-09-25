@@ -33,10 +33,24 @@ HTML_TEMPLATE = """
     <style>
         * { -webkit-tap-highlight-color: transparent; }
 
-        /* --fade-ms is written by the script from its TIMING table, so
-           the CSS fade and the JS swap logic share one definition. The
-           value here is only a fallback for the first paint. */
-        :root { --fade-ms: 160ms; }
+        /* --roll-ms is written by the script from its TIMING table, so
+           the CSS crossfade and the JS swap logic share one definition.
+           The value here is only a fallback for the first paint. */
+        :root {
+            --roll-ms: 380ms;
+            --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+            --ease-std: cubic-bezier(0.4, 0, 0.2, 1);
+            --lyrics-h: calc(100dvh - 96px);
+        }
+
+        @keyframes rise-in {
+            from { opacity: 0; transform: translate3d(0, 14px, 0) scale(0.985); }
+            to   { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+        }
+        @keyframes breathe {
+            0%, 100% { opacity: 0.55; }
+            50%      { opacity: 1; }
+        }
 
         body {
             background-color: #121212;
@@ -73,6 +87,9 @@ HTML_TEMPLATE = """
             gap: 16px;
             z-index: 10;
         }
+        .fonts-ready .login-container {
+            animation: rise-in 520ms var(--ease-out) both;
+        }
 
         .pill-input {
             display: flex;
@@ -97,7 +114,12 @@ HTML_TEMPLATE = """
         }
         input.pill-input { outline: none; }
         input.pill-input::placeholder { color: #777; text-align: center; }
-        .pill-input:hover { border-color: #1DB954; }
+        .pill-input:hover { border-color: rgba(29, 185, 84, 0.6); }
+        input.pill-input:focus {
+            border-color: #1DB954;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.4), 0 0 0 3px rgba(29, 185, 84, 0.18);
+            background: rgba(24, 24, 24, 0.9);
+        }
 
         .pill-button {
             display: flex;
@@ -121,7 +143,18 @@ HTML_TEMPLATE = """
             transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
             box-shadow: 0 8px 25px rgba(29, 185, 84, 0.4);
         }
-        .pill-button:active { transform: scale(0.97); }
+        @media (hover: hover) {
+            .pill-button:hover {
+                background: #21cf5e;
+                transform: translateY(-1px);
+                box-shadow: 0 12px 30px rgba(29, 185, 84, 0.5);
+            }
+        }
+        .pill-button:active {
+            transform: scale(0.97);
+            transition-duration: 80ms;
+            box-shadow: 0 4px 14px rgba(29, 185, 84, 0.35);
+        }
 
         .error-text {
             color: white;
@@ -134,23 +167,49 @@ HTML_TEMPLATE = """
         #lyrics-container {
             display: flex;
             width: 94vw;
-            height: calc(100dvh - 96px);
+            height: var(--lyrics-h);
             position: relative;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             text-align: center;
-            gap: 3vh;
+            gap: 2.5vh;
             z-index: 10;
             box-sizing: border-box;
         }
 
+        /* Every slot has a FIXED height (the same fractions the
+           auto-fit sizing caps text at), so the three lines never move
+           when a neighbour is empty (first/last line of a song) or when
+           a line's font-size differs from the previous one. The active
+           line is always at exactly the same place on screen. */
         .lyric-line {
             width: 100%;
+            position: relative;
+            flex: 0 0 auto;
+        }
+        .adjacent-line { height: calc(var(--lyrics-h) * 0.16); }
+        .active-line   { height: calc(var(--lyrics-h) * 0.30); }
+
+        /* Two stacked layers per slot. A line change is a true
+           crossfade: the incoming layer fades/slides in while the
+           outgoing one fades/slides out AT THE SAME TIME, so the screen
+           never dips to black between lines (the old fade-out-then-
+           fade-in read as a flicker). Direction follows playback
+           (forward = new line rises in from below, old line exits
+           upward), reversed when going backwards. */
+        .lyric-layer {
+            position: absolute;
+            inset: 0;
             display: flex;
-            justify-content: center;
             align-items: center;
-            min-height: 1em;
+            justify-content: center;
+            opacity: 0;
+            transform: translate3d(0, 0, 0);
+            transition: opacity var(--roll-ms) var(--ease-out), transform var(--roll-ms) var(--ease-out);
+            will-change: opacity, transform;
+            pointer-events: none;
+            backface-visibility: hidden;
         }
 
         .lyric-inner {
@@ -161,16 +220,6 @@ HTML_TEMPLATE = """
             text-overflow: ellipsis;
             display: inline-block;
             line-height: 1.15;
-            opacity: 0;
-            transform: translateY(0);
-            will-change: opacity, transform;
-            /* Only compositor-friendly properties are transitioned.
-               font-size is deliberately NOT here: it is only ever written
-               while the line is invisible, and animating it produced a
-               visible resize pop plus a layout pass on every frame of
-               the fade. */
-            transition: opacity var(--fade-ms) cubic-bezier(0.22, 1, 0.36, 1),
-                        transform var(--fade-ms) cubic-bezier(0.22, 1, 0.36, 1);
         }
 
         .adjacent-line .lyric-inner {
@@ -180,6 +229,16 @@ HTML_TEMPLATE = """
         .active-line .lyric-inner {
             font-weight: 900;
             text-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+
+        /* "Nothing playing" / "No synced lyrics": small, quiet, and
+           breathing slowly so the screen reads as alive, not stuck. */
+        .lyric-layer.is-placeholder .lyric-inner {
+            font-weight: 600;
+            text-shadow: none;
+            letter-spacing: 3px;
+            color: rgba(255, 255, 255, 0.85);
+            animation: breathe 3.2s ease-in-out infinite;
         }
 
         #controls-bar {
@@ -197,6 +256,10 @@ HTML_TEMPLATE = """
             border: 1px solid rgba(255, 255, 255, 0.1);
             width: min(420px, 82vw);
             box-sizing: border-box;
+        }
+        .fonts-ready #controls-bar {
+            animation: rise-in 620ms var(--ease-out) both;
+            animation-delay: 60ms;
         }
 
         /* Progress indicator traces the whole perimeter of the pill as a
@@ -221,8 +284,10 @@ HTML_TEMPLATE = """
 
         #progress-thumb {
             opacity: 0;
-            transition: opacity 0.15s ease, fill 0.15s ease;
+            r: 5.5;
+            transition: opacity 0.18s var(--ease-std), fill 0.15s ease, r 0.2s var(--ease-out);
         }
+        #progress-ring.seeking #progress-thumb { r: 7; }
 
         /* Spotify rejected the seek (no active device, restricted
            device, rate limit): brief red flash on the thumb. */
@@ -252,6 +317,11 @@ HTML_TEMPLATE = """
             padding: 0 4px;
             margin-bottom: 6px;
             height: 18px;
+            transition: opacity 180ms var(--ease-std), transform 180ms var(--ease-out);
+        }
+        #now-playing-title.swapping {
+            opacity: 0;
+            transform: translate3d(0, 4px, 0);
         }
 
         /* When the title is too long to fully fit even at the smallest
@@ -340,20 +410,49 @@ HTML_TEMPLATE = """
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.15s ease;
-            opacity: 0.7;
+            border-radius: 50%;
+            outline: none;
+            touch-action: manipulation;
+            transition: transform 220ms var(--ease-out), opacity 180ms var(--ease-std), background-color 180ms var(--ease-std);
+            opacity: 0.72;
+            will-change: transform;
         }
 
-        .control-btn:hover, .control-btn:active {
+        /* Hover only where a hover actually exists - on a touch head
+           unit :hover sticks after a tap and left one button "lit". */
+        @media (hover: hover) {
+            .control-btn:hover {
+                opacity: 1;
+                transform: scale(1.08);
+                background-color: rgba(255, 255, 255, 0.06);
+            }
+        }
+        .control-btn.pressed {
             opacity: 1;
-            transform: scale(1.1);
+            transform: scale(0.84);
+            background-color: rgba(255, 255, 255, 0.1);
+            transition-duration: 70ms;
         }
 
         .control-btn svg {
             fill: white;
             width: 24px;
             height: 24px;
+            display: block;
         }
+
+        /* Play <-> pause morph: both glyphs are always in the SVG and
+           swap with a scale/rotate crossfade instead of an innerHTML
+           replace that popped from one to the other. */
+        #play-pause-icon path {
+            transform-box: fill-box;
+            transform-origin: center;
+            transition: opacity 180ms var(--ease-std), transform 260ms var(--ease-out);
+        }
+        #play-pause-icon .ic-play  { opacity: 0; transform: scale(0.55) rotate(-90deg); }
+        #play-pause-icon .ic-pause { opacity: 1; transform: scale(1) rotate(0deg); }
+        #play-pause-icon.is-paused .ic-play  { opacity: 1; transform: scale(1) rotate(0deg); }
+        #play-pause-icon.is-paused .ic-pause { opacity: 0; transform: scale(0.55) rotate(90deg); }
 
         #album-art-hidden { display: none; }
     </style>
@@ -400,9 +499,18 @@ HTML_TEMPLATE = """
     <img id="album-art-hidden" crossorigin="anonymous" />
 
     <div id="lyrics-container">
-        <div class="lyric-line adjacent-line" id="prev-line"><div class="lyric-inner"></div></div>
-        <div class="lyric-line active-line" id="active-line"><div class="lyric-inner"></div></div>
-        <div class="lyric-line adjacent-line" id="next-line"><div class="lyric-inner"></div></div>
+        <div class="lyric-line adjacent-line" id="prev-line">
+            <div class="lyric-layer is-current"><span class="lyric-inner"></span></div>
+            <div class="lyric-layer"><span class="lyric-inner"></span></div>
+        </div>
+        <div class="lyric-line active-line" id="active-line">
+            <div class="lyric-layer is-current"><span class="lyric-inner"></span></div>
+            <div class="lyric-layer"><span class="lyric-inner"></span></div>
+        </div>
+        <div class="lyric-line adjacent-line" id="next-line">
+            <div class="lyric-layer is-current"><span class="lyric-inner"></span></div>
+            <div class="lyric-layer"><span class="lyric-inner"></span></div>
+        </div>
     </div>
 
     <!-- Playback Controls -->
@@ -438,7 +546,10 @@ HTML_TEMPLATE = """
                 <svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
             </button>
             <button class="control-btn" onclick="togglePlayPause()">
-                <svg viewBox="0 0 24 24" id="play-pause-icon"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                <svg viewBox="0 0 24 24" id="play-pause-icon" class="is-paused">
+                    <path class="ic-pause" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                    <path class="ic-play" d="M8 5v14l11-7z"/>
+                </svg>
             </button>
             <button class="control-btn" onclick="sendControl('next')">
                 <svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
@@ -452,11 +563,12 @@ HTML_TEMPLATE = """
 
         // =====================================================================
         // TIMING - the single place every duration in this page is defined.
-        // The CSS fade duration is written *from* here (see the --fade-ms
-        // custom property below) so JS and CSS can never drift apart again.
+        // The CSS crossfade duration is written *from* here (see the
+        // --roll-ms custom property below) so JS and CSS can never drift.
         // =====================================================================
         const TIMING = {
-            FADE_MS: 160,              // lyric crossfade (opacity + transform), one leg
+            ROLL_MS: 380,              // lyric crossfade (both layers move at once)
+            TITLE_SWAP_MS: 180,        // title fade-out before the new title is written
             POLL_MS: 400,              // steady-state poll cadence
             RETRY_MS: 250,             // fast retry after a transient / ignored response
             RETRY_MAX: 20,             // fast retries in a row before falling back to POLL_MS
@@ -474,7 +586,7 @@ HTML_TEMPLATE = """
             RESIZE_DEBOUNCE_MS: 120,
             RESIZE_RECHECK_MS: 400
         };
-        document.documentElement.style.setProperty('--fade-ms', TIMING.FADE_MS + 'ms');
+        document.documentElement.style.setProperty('--roll-ms', TIMING.ROLL_MS + 'ms');
 
         // ---------- Opacity targets per slot ----------
         const OPACITY_ACTIVE = 1;
@@ -714,7 +826,7 @@ HTML_TEMPLATE = """
             parsedLines = [];
             lyricsPending = false;
             lastActiveIndex = -2;
-            applyLines('', '', '');
+            applyLines('', '', '', action === 'next' ? 1 : -1);
             setAnchor(0);
             cachedTrackId = "";
             assertLocal('skip', { skipFromTrackId: from, holdMs: TIMING.SKIP_HOLD_MS });
@@ -727,12 +839,22 @@ HTML_TEMPLATE = """
         }
 
         function updatePlayPauseIcon() {
-            const icon = document.getElementById('play-pause-icon');
-            const next = isPlaying
-                ? '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>'
-                : '<path d="M8 5v14l11-7z"/>';
-            if (icon._state !== next) { icon._state = next; icon.innerHTML = next; }
+            // Both glyphs live in the SVG; CSS morphs between them.
+            document.getElementById('play-pause-icon').classList.toggle('is-paused', !isPlaying);
         }
+
+        // Press feedback on every control - the button visibly sinks the
+        // instant it is touched (before the request is even sent), and
+        // springs back on release. :active alone is unreliable on touch
+        // head units, so this is driven by pointer events.
+        document.querySelectorAll('.control-btn').forEach(btn => {
+            const down = () => btn.classList.add('pressed');
+            const up = () => btn.classList.remove('pressed');
+            btn.addEventListener('pointerdown', down);
+            btn.addEventListener('pointerup', up);
+            btn.addEventListener('pointercancel', up);
+            btn.addEventListener('pointerleave', up);
+        });
 
         // ---------- Auto-fit sizing ----------
         // Sizes are computed synchronously from (text, container width) using
@@ -816,33 +938,56 @@ HTML_TEMPLATE = """
         }
 
         // =====================================================================
-        // Coordinated crossfade text swap
+        // Two-layer crossfade
         //
-        // Each slot fades out (opacity + a few px of drift), and the text
-        // and its font-size are swapped ONLY once the fade-out has really
-        // finished - detected via `transitionend` on the opacity property,
-        // not a parallel setTimeout that merely hopes to line up with the
-        // CSS duration. A timeout (FADE_MS + slack) exists purely as a
-        // safety net for browsers that drop transitionend (e.g. the tab
-        // was hidden). font-size is not transitioned at all: it is always
-        // written while the line is invisible, so animating it only ever
-        // added a visible resize pop for no benefit.
+        // Every slot has two stacked layers. A line change writes the new
+        // text (already sized) into the HIDDEN layer, then on the next
+        // frame fades/slides that layer in while the visible one fades/
+        // slides out - simultaneously. The screen never dips to empty
+        // between lines, and because slot heights are fixed nothing else
+        // on screen moves. Direction follows playback: forward, the new
+        // line rises in from below and the old one exits upward; backward
+        // (seek/previous) it is mirrored. A change that arrives mid-roll
+        // simply re-targets both layers from wherever they are.
         // =====================================================================
+        function makeSlot(id, opacity, isActive, travel) {
+            const el = document.getElementById(id);
+            const layers = Array.from(el.querySelectorAll('.lyric-layer'));
+            return { el, layers, current: 0, opacity, isActive, travel, text: null, placeholder: false, raf: null };
+        }
         const slots = {
-            'prev-line': { inner: document.querySelector('#prev-line .lyric-inner'), opacity: OPACITY_ADJACENT, isActive: false, shift: -5 },
-            'active-line': { inner: document.querySelector('#active-line .lyric-inner'), opacity: OPACITY_ACTIVE, isActive: true, shift: -8 },
-            'next-line': { inner: document.querySelector('#next-line .lyric-inner'), opacity: OPACITY_ADJACENT, isActive: false, shift: -5 }
+            'prev-line': makeSlot('prev-line', OPACITY_ADJACENT, false, 8),
+            'active-line': makeSlot('active-line', OPACITY_ACTIVE, true, 14),
+            'next-line': makeSlot('next-line', OPACITY_ADJACENT, false, 8)
         };
+        let rollDirection = 1;
 
-        function applyLines(prevText, activeText, nextText) {
+        function currentLayer(slot) { return slot.layers[slot.current]; }
+
+        // direction: +1 forward (default), -1 backward
+        function applyLines(prevText, activeText, nextText, direction) {
+            if (direction) rollDirection = direction < 0 ? -1 : 1;
             setSlot(slots['prev-line'], prevText || '');
             setSlot(slots['active-line'], activeText || '');
             setSlot(slots['next-line'], nextText || '');
         }
 
-        function applySizedText(inner, text, isActive) {
-            const { size: guessSize, availWidth } = computeFontSize(text, isActive);
+        // Quiet status line in the active slot ("Nothing playing", "No
+        // synced lyrics") - so the screen is never just black.
+        function showPlaceholder(text) {
+            setSlot(slots['prev-line'], '');
+            setSlot(slots['active-line'], text, true);
+            setSlot(slots['next-line'], '');
+        }
+
+        const PLACEHOLDER_SIZE = 13;
+        function applySizedText(inner, text, isActive, placeholder) {
             inner.textContent = text;
+            if (placeholder) {
+                inner.style.fontSize = PLACEHOLDER_SIZE + 'px';
+                return;
+            }
+            const { size: guessSize, availWidth } = computeFontSize(text, isActive);
             if (!text) {
                 inner.style.fontSize = guessSize + 'px';
                 return;
@@ -851,75 +996,45 @@ HTML_TEMPLATE = """
             fitTextToWidth(inner, guessSize, minSize, availWidth);
         }
 
-        function cancelPendingSwap(inner) {
-            if (inner._onFadeEnd) {
-                inner.removeEventListener('transitionend', inner._onFadeEnd);
-                inner._onFadeEnd = null;
-            }
-            if (inner._fadeTimer) {
-                clearTimeout(inner._fadeTimer);
-                inner._fadeTimer = null;
-            }
-            if (inner._revealRaf) {
-                cancelAnimationFrame(inner._revealRaf);
-                inner._revealRaf = null;
-            }
-        }
+        function setSlot(slot, text, placeholder) {
+            placeholder = !!placeholder;
+            if (slot.text === text && slot.placeholder === placeholder) return;
+            slot.text = text;
+            slot.placeholder = placeholder;
+            if (slot.raf) { cancelAnimationFrame(slot.raf); slot.raf = null; }
 
-        // Write the new text/size while invisible and untransitioned, then
-        // fade in from a small offset on the next frame.
-        function swapAndReveal(slot, text) {
-            const inner = slot.inner;
-            inner.style.transition = 'none';
-            inner.style.opacity = '0';
-            inner.style.transform = `translateY(${-slot.shift}px)`;
-            applySizedText(inner, text, slot.isActive);
-            void inner.offsetHeight; // commit the untransitioned state
-            inner.style.transition = '';
-            inner._revealRaf = requestAnimationFrame(() => {
-                inner._revealRaf = null;
-                inner.style.opacity = text ? String(slot.opacity) : '0';
-                inner.style.transform = 'translateY(0)';
+            const outgoing = slot.layers[slot.current];
+            slot.current = 1 - slot.current;
+            const incoming = slot.layers[slot.current];
+            const dir = rollDirection;
+            const travel = slot.travel;
+
+            // Stage the incoming layer while it is invisible and
+            // untransitioned: new text, final size, start offset.
+            incoming.style.transition = 'none';
+            incoming.style.opacity = '0';
+            incoming.style.transform = `translate3d(0, ${dir * travel}px, 0)`;
+            incoming.classList.toggle('is-placeholder', placeholder);
+            applySizedText(incoming.firstElementChild, text, slot.isActive, placeholder);
+            incoming.classList.add('is-current');
+            outgoing.classList.remove('is-current');
+            void incoming.offsetHeight; // commit the staged state
+
+            slot.raf = requestAnimationFrame(() => {
+                slot.raf = null;
+                incoming.style.transition = '';
+                outgoing.style.transition = '';
+                incoming.style.opacity = text ? String(placeholder ? 1 : slot.opacity) : '0';
+                incoming.style.transform = 'translate3d(0, 0, 0)';
+                outgoing.style.opacity = '0';
+                outgoing.style.transform = `translate3d(0, ${-dir * travel}px, 0)`;
             });
-        }
-
-        function setSlot(slot, text) {
-            const inner = slot.inner;
-            if (inner.dataset.text === text) return;
-            inner.dataset.text = text;
-            cancelPendingSwap(inner);
-
-            // Already invisible (never shown, or a previous fade-out has
-            // finished) - no need to fade out first.
-            const currentOpacity = parseFloat(getComputedStyle(inner).opacity) || 0;
-            if (currentOpacity <= 0.01) {
-                swapAndReveal(slot, text);
-                return;
-            }
-
-            const onEnd = (ev) => {
-                if (ev && ev.propertyName && ev.propertyName !== 'opacity') return;
-                cancelPendingSwap(inner);
-                swapAndReveal(slot, text);
-            };
-            inner._onFadeEnd = onEnd;
-            inner.addEventListener('transitionend', onEnd);
-            inner._fadeTimer = setTimeout(onEnd, TIMING.FADE_MS + 80);
-
-            inner.style.opacity = '0';
-            inner.style.transform = `translateY(${slot.shift}px)`;
         }
 
         function refitCurrentLines() {
             Object.values(slots).forEach(slot => {
-                const text = slot.inner.dataset.text || '';
-                if (!text) return;
-                const inner = slot.inner;
-                const prevTransition = inner.style.transition;
-                inner.style.transition = 'none';
-                applySizedText(inner, text, slot.isActive);
-                void inner.offsetHeight;
-                inner.style.transition = prevTransition;
+                if (!slot.text || slot.placeholder) return;
+                applySizedText(currentLayer(slot).firstElementChild, slot.text, slot.isActive, false);
             });
         }
 
@@ -1007,10 +1122,8 @@ HTML_TEMPLATE = """
                 .replace(/"/g, '&quot;');
         }
 
-        function setTitle(title, artist) {
-            const text = artist ? `${title} • ${artist}` : title;
-            if (text === currentTitleText) return;
-            currentTitleText = text;
+        let titleSwapTimer = null;
+        function writeTitle(title, artist) {
             titleInnerEl.classList.remove('marquee');
             titleEl.classList.remove('marquee-active');
             if (artist) {
@@ -1022,6 +1135,30 @@ HTML_TEMPLATE = """
                 titleInnerEl.textContent = title;
             }
             applyTitleLayout();
+        }
+
+        // Title changes fade out, swap, fade in (first appearance and a
+        // clear just fade). The swap happens while it is invisible, so
+        // the marquee/size re-layout is never seen.
+        function setTitle(title, artist) {
+            const text = artist ? `${title} • ${artist}` : title;
+            if (text === currentTitleText) return;
+            const hadTitle = !!currentTitleText;
+            currentTitleText = text;
+            clearTimeout(titleSwapTimer);
+            if (!hadTitle) {
+                titleEl.classList.add('swapping');
+                writeTitle(title, artist);
+                void titleEl.offsetHeight;
+                titleEl.classList.remove('swapping');
+                return;
+            }
+            titleEl.classList.add('swapping');
+            titleSwapTimer = setTimeout(() => {
+                if (currentTitleText !== text) return;
+                writeTitle(title, artist);
+                titleEl.classList.remove('swapping');
+            }, TIMING.TITLE_SWAP_MS);
         }
 
         // =====================================================================
@@ -1251,14 +1388,22 @@ HTML_TEMPLATE = """
         }
 
         function syncLyricsToProgress(progressMs) {
-            if (!parsedLines.length) return;
+            if (!parsedLines.length) {
+                if (cachedTrackId && !lyricsPending && lastActiveIndex !== -3) {
+                    lastActiveIndex = -3;
+                    showPlaceholder('No synced lyrics');
+                }
+                return;
+            }
             const activeIndex = activeIndexFor(progressMs);
             if (activeIndex === lastActiveIndex) return;
+            // -2/-3 = fresh track / placeholder: always roll forward.
+            const direction = (lastActiveIndex < -1 || activeIndex >= lastActiveIndex) ? 1 : -1;
             lastActiveIndex = activeIndex;
             const prevText = activeIndex > 0 ? parsedLines[activeIndex - 1].words : "";
             const activeText = activeIndex >= 0 ? parsedLines[activeIndex].words : "";
             const nextText = activeIndex + 1 < parsedLines.length ? parsedLines[activeIndex + 1].words : "";
-            applyLines(prevText, activeText, nextText);
+            applyLines(prevText, activeText, nextText, direction);
         }
 
         // =====================================================================
@@ -1289,7 +1434,7 @@ HTML_TEMPLATE = """
         function clearTrackDisplay() {
             isPlaying = false;
             updatePlayPauseIcon();
-            applyLines('', '', '');
+            showPlaceholder('Nothing playing');
             lastActiveIndex = -2;
             cachedTrackId = "";
             parsedLines = [];
@@ -1297,9 +1442,15 @@ HTML_TEMPLATE = """
             trackDurationMs = 0;
             setAnchor(0);
             currentTitleText = '';
-            titleInnerEl.textContent = '';
-            titleInnerEl.classList.remove('marquee');
-            titleEl.classList.remove('marquee-active');
+            clearTimeout(titleSwapTimer);
+            titleEl.classList.add('swapping');
+            titleSwapTimer = setTimeout(() => {
+                if (currentTitleText) return;
+                titleInnerEl.textContent = '';
+                titleInnerEl.classList.remove('marquee');
+                titleEl.classList.remove('marquee-active');
+            }, TIMING.TITLE_SWAP_MS);
+            document.body.style.backgroundColor = '#121212';
             releaseLocal();
             if (!isSeeking) setProgressVisual(0);
         }
@@ -1372,7 +1523,7 @@ HTML_TEMPLATE = """
                         parsedLines = data.lines || [];
                         lyricsPending = !!data.lyricsPending;
                         lastActiveIndex = -2;
-                        applyLines('', '', '');
+                        if (!parsedLines.length) applyLines('', '', '', 1);
                         isPlaying = !!data.isPlaying;
                         setAnchor(serverProgressNow);
                         updatePlayPauseIcon();
